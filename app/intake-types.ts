@@ -33,6 +33,15 @@ export type IntakeApiResult = {
   patientCase: PatientCase;
   intakeComplete: boolean;
   urgentWarning: string | null;
+  conversationId: string | null;
+  agent: {
+    name: string;
+    model: string;
+    conversationId: string | null;
+    memoryActive: boolean;
+    safetyCheck: "passed" | "triggered";
+    stateRecorded: boolean;
+  };
 };
 
 export const emptyPatientCase: PatientCase = {

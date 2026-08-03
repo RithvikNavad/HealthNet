@@ -63,6 +63,7 @@ export default function Home() {
   const [isSending, setIsSending] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [urgentWarning, setUrgentWarning] = useState<string | null>(null);
+  const [conversationId, setConversationId] = useState<string | null>(null);
 
   const patientAnswers = messages.filter((message) => message.role === "patient");
   const progress = intakeComplete ? 100 : patientCase.progress;
@@ -85,16 +86,19 @@ export default function Home() {
       const response = await fetch("/api/intake", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: updatedMessages, patientCase }),
+        body: JSON.stringify({ patientMessage: answer, patientCase, conversationId }),
       });
       const result = await response.json() as IntakeApiResult | { error?: string };
-      if (!response.ok || !("patientCase" in result)) throw new Error(result.error || "The AI could not process that answer.");
+      if (!response.ok || !("patientCase" in result)) {
+        throw new Error("error" in result && result.error ? result.error : "The AI could not process that answer.");
+      }
 
       setMessages((current) => [...current, { role: "assistant", text: result.assistantMessage }]);
       setPatientCase(result.patientCase);
       setTimeline(timelineFrom(result.patientCase));
       setIntakeComplete(result.intakeComplete);
       setUrgentWarning(result.urgentWarning);
+      setConversationId(result.conversationId);
       setDemoLoaded(false);
     } catch (error) {
       setMessages(previousMessages);
@@ -113,6 +117,7 @@ export default function Home() {
     setIntakeComplete(false);
     setErrorMessage("");
     setUrgentWarning(null);
+    setConversationId(null);
   }
 
   function startOver() {
@@ -123,6 +128,7 @@ export default function Home() {
     setIntakeComplete(false);
     setErrorMessage("");
     setUrgentWarning(null);
+    setConversationId(null);
     setView("intake");
   }
 
@@ -172,7 +178,7 @@ export default function Home() {
           <div className="page-intro no-print"><div><p className="eyebrow">PREPARE FOR YOUR VISIT</p><h1>Tell us what’s been happening</h1><p>Share your story naturally. AI asks focused follow-up questions and organizes the details for you.</p></div><button className="demo-button" onClick={loadDemo}>Load example patient</button></div>
           <div className="intake-grid">
             <section className="conversation-card">
-              <div className="conversation-header no-print"><div className="ai-orb"><span /></div><div><strong>AI care guide</strong><span><i /> Organizing your history</span></div><button aria-label="More options">•••</button></div>
+              <div className="conversation-header no-print"><div className="ai-orb"><span /></div><div><strong>HealthNet care agent</strong><span><i /> {conversationId ? "Visit memory active" : "Ready to organize your history"}</span></div><button aria-label="More options">•••</button></div>
               <div className="messages" aria-live="polite">
                 <div className="date-divider"><span>Today</span></div>
                 {messages.map((message, index) => <div className={`message-row ${message.role}`} key={`${message.role}-${index}`}>{message.role === "assistant" && <div className="mini-orb">H</div>}<div className="message-bubble">{message.text}</div></div>)}
