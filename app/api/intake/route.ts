@@ -10,6 +10,7 @@ import {
   PatientCaseSchema,
   healthNetAgent,
 } from "../../../lib/healthnet-agent";
+import { enforceAgentRateLimit } from "../../../lib/agent-rate-limit";
 
 const agentRunner = new Runner({
   workflowName: "HealthNet fictional patient intake",
@@ -20,6 +21,8 @@ const RequestSchema = z.object({
   patientMessage: z.string().trim().min(1).max(4000),
   patientCase: PatientCaseSchema,
   conversationId: z.string().trim().min(1).max(200).nullable().optional(),
+  visitorId: z.string().uuid(),
+  visitId: z.string().uuid(),
 });
 
 function agentDetails(overrides?: Partial<{
@@ -47,7 +50,20 @@ export async function POST(request: Request) {
     return Response.json({ error: "The intake request was not valid." }, { status: 400 });
   }
 
-  const { patientMessage, patientCase, conversationId } = parsedRequest.data;
+  const { patientMessage, patientCase, conversationId, visitorId, visitId } = parsedRequest.data;
+  let rateLimit: Awaited<ReturnType<typeof enforceAgentRateLimit>>;
+  try {
+    rateLimit = await enforceAgentRateLimit(request, visitorId, visitId);
+  } catch (error) {
+    console.error("HealthNet usage protection failed", { error: error instanceof Error ? error.name : "unknown" });
+    return Response.json({ error: "The public demo’s usage protection is temporarily unavailable. Please try again shortly." }, { status: 503 });
+  }
+  if (!rateLimit.allowed) {
+    return Response.json(
+      { error: rateLimit.message },
+      { status: 429, headers: { "Retry-After": String(rateLimit.retryAfterSeconds) } },
+    );
+  }
   const session = new OpenAIConversationsSession({
     apiKey: process.env.OPENAI_API_KEY,
     conversationId: conversationId || undefined,
@@ -79,31 +95,37 @@ export async function POST(request: Request) {
       item.rawItem.name === "record_intake_state"
     );
 
-    return Response.json({
-      ...result.finalOutput,
-      conversationId: resolvedConversationId,
-      agent: agentDetails({
+    return Response.json(
+      {
+        ...result.finalOutput,
         conversationId: resolvedConversationId,
-        safetyCheck: "passed",
-        stateRecorded,
-      }),
-    });
+        agent: agentDetails({
+          conversationId: resolvedConversationId,
+          safetyCheck: "passed",
+          stateRecorded,
+        }),
+      },
+      { headers: { "X-RateLimit-Remaining": String(rateLimit.remaining) } },
+    );
   } catch (error) {
     if (error instanceof InputGuardrailTripwireTriggered) {
       const outputInfo = error.result.output.outputInfo as { urgentWarning?: string | null };
       const urgentWarning = outputInfo.urgentWarning || "Some symptoms you described may require immediate medical help.";
-      return Response.json({
-        assistantMessage: "Please seek immediate help now rather than waiting to finish this intake.",
-        patientCase,
-        intakeComplete: false,
-        urgentWarning,
-        conversationId: conversationId || null,
-        agent: agentDetails({
+      return Response.json(
+        {
+          assistantMessage: "Please seek immediate help now rather than waiting to finish this intake.",
+          patientCase,
+          intakeComplete: false,
+          urgentWarning,
           conversationId: conversationId || null,
-          safetyCheck: "triggered",
-          stateRecorded: false,
-        }),
-      });
+          agent: agentDetails({
+            conversationId: conversationId || null,
+            safetyCheck: "triggered",
+            stateRecorded: false,
+          }),
+        },
+        { headers: { "X-RateLimit-Remaining": String(rateLimit.remaining) } },
+      );
     }
 
     const status = typeof error === "object" && error && "status" in error ? Number(error.status) : 500;

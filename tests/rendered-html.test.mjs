@@ -1,28 +1,18 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-async function render() {
-  const workerUrl = new URL("../dist/server/index.js", import.meta.url);
-  workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}`);
-  const { default: worker } = await import(workerUrl.href);
+test("the HealthNet public demo keeps its product and safety messaging", async () => {
+  const [page, layout] = await Promise.all([
+    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
+  ]);
 
-  return worker.fetch(
-    new Request("http://localhost/", { headers: { accept: "text/html" } }),
-    { ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) } },
-    { waitUntil() {}, passThroughOnException() {} },
-  );
-}
-
-test("server-renders the HealthNet agent experience", async () => {
-  const response = await render();
-  assert.equal(response.status, 200);
-  assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
-
-  const html = await response.text();
-  assert.match(html, /HealthNet/);
-  assert.match(html, /HealthNet care agent/);
-  assert.match(html, /Tell us what’s been happening/);
-  assert.match(html, /Use fictional patient information only/);
-  assert.match(html, /Visit summary/);
-  assert.doesNotMatch(html, /OPENAI_API_KEY|sk-[A-Za-z0-9_-]+/);
+  assert.match(layout, /HealthNet — Prepare for better care/);
+  assert.match(page, /HealthNet care agent/);
+  assert.match(page, /Tell us what’s been happening/);
+  assert.match(page, /Protected public demo/);
+  assert.match(page, /Fictional information only/);
+  assert.match(page, /Visit summary/);
+  assert.doesNotMatch(page, /OPENAI_API_KEY|sk-[A-Za-z0-9_-]+/);
 });

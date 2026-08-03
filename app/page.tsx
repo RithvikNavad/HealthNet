@@ -7,6 +7,20 @@ type View = "intake" | "review" | "summary";
 type TimelineEvent = PatientCase["timeline"][number] & { id: string };
 type Message = { role: "assistant" | "patient"; text: string };
 
+const VISITOR_ID_KEY = "healthnet-public-demo-visitor";
+
+function storedVisitorId() {
+  try {
+    const existing = window.localStorage.getItem(VISITOR_ID_KEY);
+    if (existing) return existing;
+    const created = window.crypto.randomUUID();
+    window.localStorage.setItem(VISITOR_ID_KEY, created);
+    return created;
+  } catch {
+    return window.crypto.randomUUID();
+  }
+}
+
 const starterMessages: Message[] = [
   { role: "assistant", text: "Hi! I’ll help organize your symptoms before your appointment. Start wherever feels natural—what has been bothering you?" },
 ];
@@ -64,6 +78,8 @@ export default function Home() {
   const [errorMessage, setErrorMessage] = useState("");
   const [urgentWarning, setUrgentWarning] = useState<string | null>(null);
   const [conversationId, setConversationId] = useState<string | null>(null);
+  const [visitorId, setVisitorId] = useState<string | null>(null);
+  const [visitId, setVisitId] = useState<string | null>(null);
 
   const patientAnswers = messages.filter((message) => message.role === "patient");
   const progress = intakeComplete ? 100 : patientCase.progress;
@@ -82,11 +98,16 @@ export default function Home() {
     setErrorMessage("");
     setIsSending(true);
 
+    const resolvedVisitorId = visitorId || storedVisitorId();
+    const resolvedVisitId = visitId || window.crypto.randomUUID();
+    if (!visitorId) setVisitorId(resolvedVisitorId);
+    if (!visitId) setVisitId(resolvedVisitId);
+
     try {
       const response = await fetch("/api/intake", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ patientMessage: answer, patientCase, conversationId }),
+        body: JSON.stringify({ patientMessage: answer, patientCase, conversationId, visitorId: resolvedVisitorId, visitId: resolvedVisitId }),
       });
       const result = await response.json() as IntakeApiResult | { error?: string };
       if (!response.ok || !("patientCase" in result)) {
@@ -118,6 +139,7 @@ export default function Home() {
     setErrorMessage("");
     setUrgentWarning(null);
     setConversationId(null);
+    setVisitId(null);
   }
 
   function startOver() {
@@ -129,6 +151,7 @@ export default function Home() {
     setErrorMessage("");
     setUrgentWarning(null);
     setConversationId(null);
+    setVisitId(null);
     setView("intake");
   }
 
@@ -159,7 +182,7 @@ export default function Home() {
           <p className="nav-label coming-label">Coming later</p>
           <button disabled><span className="nav-icon">↗</span> Understand records</button><button disabled><span className="nav-icon">⌁</span> Track my health</button>
         </nav>
-        <div className="privacy-note"><span className="privacy-dot" /><div><strong>Demo environment</strong><p>Use fictional patient information only.</p></div></div>
+        <div className="privacy-note"><span className="privacy-dot" /><div><strong>Protected public demo</strong><p>Fictional information only. AI usage is limited.</p></div></div>
         <div className="profile"><div className="avatar">MN</div><div><strong>Maya Nguyen</strong><span>Sample patient</span></div><button aria-label="Profile menu">•••</button></div>
       </aside>
 
