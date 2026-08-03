@@ -80,6 +80,12 @@ button { color: inherit; }
 .mini-orb { flex: 0 0 24px; width: 24px; height: 24px; display: grid; place-items: center; background: var(--green); color: white; border-radius: 8px 8px 8px 3px; font-size: 9px; font-weight: 700; }
 .message-bubble { max-width: 78%; padding: 10px 13px; border-radius: 5px 13px 13px 13px; background: #f0f5fb; font-size: 11px; line-height: 1.5; color: #314e68; }
 .patient .message-bubble { border-radius: 13px 5px 13px 13px; background: var(--green); color: white; }
+.typing-message { display: flex; gap: 4px; align-items: center; min-height: 34px; }
+.typing-message i { width: 5px; height: 5px; border-radius: 50%; background: #5f7590; animation: typing-pulse 1s infinite ease-in-out; }
+.typing-message i:nth-child(2) { animation-delay: .15s; }.typing-message i:nth-child(3) { animation-delay: .3s; }
+@keyframes typing-pulse { 0%, 60%, 100% { opacity: .3; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-2px); } }
+.urgent-warning { margin: 14px 32px 5px; border: 1px solid #f2b8b5; background: #fff5f4; border-radius: 10px; padding: 12px; color: #8c2722; }
+.urgent-warning strong { display: block; font-size: 10px; }.urgent-warning p { margin: 4px 0 0; font-size: 9px; line-height: 1.5; }
 .insight-card { margin: 18px 32px 5px; border: 1px solid #cfe0ff; background: #f4f8ff; border-radius: 10px; padding: 11px; display: flex; gap: 9px; }
 .insight-card > span { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; background: var(--mint); color: var(--green); font-size: 10px; }
 .insight-card strong { display: block; font-size: 10px; }.insight-card p { color: #5f7590; font-size: 9px; line-height: 1.5; margin: 3px 0 0; }
@@ -89,7 +95,9 @@ button { color: inherit; }
 .composer textarea { resize: none; flex: 1; border: 0; outline: 0; color: var(--ink); font-size: 11px; line-height: 1.4; }
 .composer textarea::placeholder { color: #9aa7a2; }
 .composer button { width: 31px; height: 31px; border-radius: 8px; background: var(--green); border: 0; color: white; cursor: pointer; font-size: 16px; }
+.composer textarea:disabled { background: white; }.composer button:disabled { opacity: .45; cursor: not-allowed; }
 .composer p { margin: 6px 0 0; text-align: center; color: #9aa7a2; font-size: 8px; }
+.composer .intake-error { color: #a33b35; font-weight: 600; }
 .intake-complete { min-height: 78px; padding: 14px 18px; border-top: 1px solid #d9e7f8; background: #f4f8ff; display: flex; align-items: center; gap: 10px; }
 .intake-complete > span { width: 28px; height: 28px; flex: 0 0 28px; border-radius: 50%; display: grid; place-items: center; background: var(--green); color: white; font-size: 12px; font-weight: 800; }
 .intake-complete > div { min-width: 0; flex: 1; }
