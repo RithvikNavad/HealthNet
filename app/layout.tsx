@@ -13,12 +13,12 @@ export async function generateMetadata(): Promise<Metadata> {
   const socialImage = `${protocol}://${host}/og.png`;
 
   return {
-    title: "Carepath — Prepare for better care",
+    title: "HealthNet — Prepare for better care",
     description: "Turn your health story into an organized, clinician-ready visit summary.",
     openGraph: {
-      title: "Carepath — Prepare for better care",
+      title: "HealthNet — Prepare for better care",
       description: "Turn your health story into an organized, clinician-ready visit summary.",
-      images: [{ url: socialImage, width: 1536, height: 1024, alt: "Carepath turns a health story into a visit summary" }],
+      images: [{ url: socialImage, width: 1536, height: 1024, alt: "HealthNet turns a health story into a visit summary" }],
     },
     twitter: { card: "summary_large_image", images: [socialImage] },
   };

@@ -112,9 +112,9 @@ export default function Home() {
   return (
     <main className="app-shell">
       <aside className="sidebar no-print">
-        <button className="brand" onClick={() => setView("intake")} aria-label="Carepath home">
-          <span className="brand-mark">C</span>
-          <span>carepath</span>
+        <button className="brand" onClick={() => setView("intake")} aria-label="HealthNet home">
+          <span className="brand-mark">H</span>
+          <span>HealthNet</span>
         </button>
 
         <nav className="main-nav" aria-label="Primary navigation">
@@ -147,7 +147,7 @@ export default function Home() {
 
       <section className="workspace">
         <header className="topbar no-print">
-          <div className="mobile-brand"><span className="brand-mark">C</span> carepath</div>
+          <div className="mobile-brand"><span className="brand-mark">H</span> HealthNet</div>
           <div className="stepper" aria-label="Visit preparation progress">
             <button className={view === "intake" ? "current" : "done"} onClick={() => setView("intake")}><span>1</span> Intake</button>
             <i />
@@ -275,7 +275,7 @@ function SummaryView({ concern, timeline, onBack }: { concern: string; timeline:
     <div className="summary-page">
       <div className="summary-toolbar no-print"><div><p className="eyebrow">VISIT SUMMARY</p><h1>Ready for your appointment</h1><p>Print this summary or save it as a PDF to share with your physician.</p></div><div><button className="secondary-button" onClick={onBack}>Edit information</button><button className="primary-button" onClick={() => window.print()}>Print summary</button></div></div>
       <article className="clinical-summary">
-        <header className="document-header"><div><span className="document-logo">C</span><div><strong>Carepath</strong><p>Pre-Visit Patient Summary</p></div></div><div className="document-meta"><span>Prepared</span><strong>August 3, 2026</strong></div></header>
+        <header className="document-header"><div><span className="document-logo">H</span><div><strong>HealthNet</strong><p>Pre-Visit Patient Summary</p></div></div><div className="document-meta"><span>Prepared</span><strong>August 3, 2026</strong></div></header>
         <div className="patient-strip"><div><span>PATIENT</span><strong>Maya Nguyen</strong></div><div><span>AGE</span><strong>42 years</strong></div><div><span>VISIT TYPE</span><strong>Primary care</strong></div><div><span>INFORMATION SOURCE</span><strong>Patient-reported</strong></div></div>
         <section className="document-section priority"><p className="section-kicker">PRIMARY CONCERN</p><h2>{concern}</h2></section>
         <div className="document-columns">
