@@ -24,6 +24,7 @@ const demoMessages: Message[] = [
   { role: "patient", text: "Usually 20 to 30 seconds. I haven’t fainted, but I need to hold onto something." },
   { role: "assistant", text: "Got it. Have you had chest pain, a racing heartbeat, weakness on one side, or changes in your vision?" },
   { role: "patient", text: "No chest pain or weakness. My vision gets a little dim during the spell, then returns to normal." },
+  { role: "assistant", text: "Thanks—that helps clarify the pattern. Have you started or changed any medications recently?" },
 ];
 
 const demoTimeline: TimelineEvent[] = [
@@ -44,9 +45,10 @@ export default function Home() {
   const [input, setInput] = useState("");
   const [step, setStep] = useState(0);
   const [demoLoaded, setDemoLoaded] = useState(false);
+  const [intakeComplete, setIntakeComplete] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
 
-  const progress = demoLoaded ? 78 : Math.min(12 + step * 14, 82);
+  const progress = intakeComplete ? 100 : demoLoaded ? 78 : Math.min(12 + step * 14, 82);
   const patientAnswers = messages.filter((message) => message.role === "patient");
 
   const summaryConcern = demoLoaded
@@ -58,17 +60,20 @@ export default function Home() {
   function submitAnswer(event: FormEvent) {
     event.preventDefault();
     const answer = input.trim();
-    if (!answer) return;
+    if (!answer || intakeComplete) return;
 
-    const nextStep = Math.min(step + 1, intakeQuestions.length - 1);
-    const nextQuestion = intakeQuestions[nextStep];
+    const isLastQuestion = step === intakeQuestions.length - 1;
+    const nextStep = step + 1;
+    const nextQuestion = isLastQuestion
+      ? "Thank you—your intake is complete. I’ve organized your answers and timeline so you can review them before creating your visit summary."
+      : intakeQuestions[nextStep];
     setMessages((current) => [
       ...current,
       { role: "patient", text: answer },
       { role: "assistant", text: nextQuestion },
     ]);
 
-    if (step === 1 || step === 5) {
+    if (step === 1 || (step === 5 && !demoLoaded)) {
       setTimeline((current) => [
         ...current,
         {
@@ -80,7 +85,11 @@ export default function Home() {
       ]);
     }
 
-    setStep(nextStep);
+    if (isLastQuestion) {
+      setIntakeComplete(true);
+    } else {
+      setStep(nextStep);
+    }
     setInput("");
   }
 
@@ -89,6 +98,7 @@ export default function Home() {
     setTimeline(demoTimeline);
     setStep(5);
     setDemoLoaded(true);
+    setIntakeComplete(false);
   }
 
   function startOver() {
@@ -96,6 +106,7 @@ export default function Home() {
     setTimeline([]);
     setStep(0);
     setDemoLoaded(false);
+    setIntakeComplete(false);
     setView("intake");
   }
 
@@ -104,10 +115,11 @@ export default function Home() {
   }
 
   const statusLabel = useMemo(() => {
+    if (intakeComplete) return "Ready to review";
     if (progress > 70) return "Almost ready to review";
     if (progress > 35) return "Building your history";
     return "Getting started";
-  }, [progress]);
+  }, [intakeComplete, progress]);
 
   return (
     <main className="app-shell">
@@ -186,14 +198,22 @@ export default function Home() {
                     </div>
                   )}
                 </div>
-                <form className="composer no-print" onSubmit={submitAnswer}>
-                  <label htmlFor="patient-answer">Your answer</label>
-                  <div>
-                    <textarea id="patient-answer" value={input} onChange={(event) => setInput(event.target.value)} placeholder="Type your answer here…" rows={2} />
-                    <button type="submit" aria-label="Send answer">↑</button>
+                {intakeComplete ? (
+                  <div className="intake-complete no-print">
+                    <span>✓</span>
+                    <div><strong>Intake complete</strong><p>Your answers are organized and ready for you to check.</p></div>
+                    <button onClick={() => setView("review")}>Review my history <b>→</b></button>
                   </div>
-                  <p>You can use everyday language—medical terms aren’t necessary.</p>
-                </form>
+                ) : (
+                  <form className="composer no-print" onSubmit={submitAnswer}>
+                    <label htmlFor="patient-answer">Your answer</label>
+                    <div>
+                      <textarea id="patient-answer" value={input} onChange={(event) => setInput(event.target.value)} placeholder="Type your answer here…" rows={2} />
+                      <button type="submit" aria-label="Send answer">↑</button>
+                    </div>
+                    <p>You can use everyday language—medical terms aren’t necessary.</p>
+                  </form>
+                )}
               </section>
 
               <aside className="timeline-card">

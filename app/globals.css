@@ -90,6 +90,13 @@ button { color: inherit; }
 .composer textarea::placeholder { color: #9aa7a2; }
 .composer button { width: 31px; height: 31px; border-radius: 8px; background: var(--green); border: 0; color: white; cursor: pointer; font-size: 16px; }
 .composer p { margin: 6px 0 0; text-align: center; color: #9aa7a2; font-size: 8px; }
+.intake-complete { min-height: 78px; padding: 14px 18px; border-top: 1px solid #d9e7f8; background: #f4f8ff; display: flex; align-items: center; gap: 10px; }
+.intake-complete > span { width: 28px; height: 28px; flex: 0 0 28px; border-radius: 50%; display: grid; place-items: center; background: var(--green); color: white; font-size: 12px; font-weight: 800; }
+.intake-complete > div { min-width: 0; flex: 1; }
+.intake-complete strong { display: block; color: var(--ink); font-size: 10px; }
+.intake-complete p { margin: 3px 0 0; color: var(--muted); font-size: 8px; line-height: 1.4; }
+.intake-complete button { border: 0; border-radius: 8px; padding: 9px 12px; background: var(--green); color: white; font-size: 9px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.intake-complete button b { margin-left: 5px; }
 
 .timeline-card { display: flex; flex-direction: column; }
 .timeline-header { padding: 18px 19px 15px; display: flex; align-items: flex-start; justify-content: space-between; border-bottom: 1px solid #edf1ef; }
