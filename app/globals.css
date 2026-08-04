@@ -234,3 +234,21 @@ button { color: inherit; }
 @media (max-width: 620px) {
   .welcome-row, .module-heading { align-items: flex-start; flex-direction: column; }.welcome-row h1, .module-heading h1 { font-size: 27px; }.care-status { width: 100%; }.action-grid { grid-template-columns: 1fr; }.action-card { min-height: 0; display: flex; gap: 14px; }.action-card h2 { margin-top: 1px; }.action-card p { min-height: 0; margin-bottom: 8px; }.dashboard-side { display: flex; }.source-pill.record-source { display: none; }.dashboard-disclaimer { align-items: flex-start; flex-wrap: wrap; }.dashboard-disclaimer p { min-width: calc(100% - 30px); }.dashboard-disclaimer button { margin-left: 25px; }.source-legend { flex-wrap: wrap; }.full-timeline-card { padding: 19px 14px; }.full-timeline-list article { grid-template-columns: 90px 20px 1fr; }.full-date { padding-right: 10px; }.module-preview-card > div:last-child { padding: 25px 20px; }.appointment-hero { min-height: 320px; flex-direction: column; align-items: flex-start; }.large-date { width: 88px; height: 96px; flex-basis: 96px; }.large-date strong { font-size: 38px; }.care-summary-grid { grid-template-columns: 1fr 1fr; }.add-modal > div { grid-template-columns: 1fr; }.add-modal > div > button { padding: 7px 9px; }.add-button { width: 39px; padding: 0; font-size: 0; }.add-button span { margin: 0; font-size: 17px; }
 }
+
+/* Patient-controlled profile */
+.profile { width: 100%; border-right: 0; border-bottom: 0; border-left: 0; background: transparent; text-align: left; cursor: pointer; }
+.profile-edit { color: #2563eb !important; font-size: 8px !important; font-weight: 700; }
+.inline-name-button { margin-left: 4px; padding: 0; border: 0; background: transparent; color: #2563eb; font-size: inherit; font-weight: 700; text-decoration: underline; cursor: pointer; }
+.name-backdrop { place-items: center; padding: 20px; }
+.name-modal { width: min(430px, calc(100vw - 30px)); padding: 32px; border: 1px solid #d5e1ee; border-radius: 18px; background: white; text-align: center; box-shadow: 0 25px 70px rgba(15,37,61,.23); }
+.name-mark { width: 47px; height: 47px; margin: 0 auto 18px; display: grid; place-items: center; border-radius: 14px 14px 14px 5px; background: #2563eb; color: white; font-size: 19px; font-weight: 800; box-shadow: 0 9px 24px rgba(37,99,235,.25); }
+.name-modal h2 { margin: 0; color: #183c62; font-family: Georgia, serif; font-size: 25px; font-weight: 500; }
+.name-modal > p:not(.eyebrow) { margin: 9px auto 20px; max-width: 340px; color: #71869a; font-size: 10px; line-height: 1.55; }
+.name-modal form { text-align: left; }
+.name-modal label { display: block; margin-bottom: 6px; color: #46647f; font-size: 9px; font-weight: 700; }
+.name-modal input { width: 100%; height: 43px; padding: 0 12px; border: 1px solid #cbd9e8; border-radius: 9px; outline: 0; color: #234460; font-size: 11px; }
+.name-modal input:focus { border-color: #4b83e6; box-shadow: 0 0 0 3px #e9f1ff; }
+.name-modal form button { width: 100%; height: 42px; margin-top: 11px; border: 0; border-radius: 9px; background: #2563eb; color: white; font-size: 10px; font-weight: 750; cursor: pointer; }
+.name-modal form button:disabled { opacity: .45; cursor: not-allowed; }
+.name-cancel { margin-top: 10px; border: 0; background: transparent; color: #6f8498; font-size: 9px; cursor: pointer; }
+.name-modal small { display: block; margin-top: 17px; padding-top: 13px; border-top: 1px solid #e8eef5; color: #95a3b1; font-size: 7.5px; }
