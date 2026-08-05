@@ -9,6 +9,7 @@ type Message = { role: "assistant" | "patient"; text: string };
 
 const VISITOR_ID_KEY = "healthnet-public-demo-visitor";
 const PATIENT_NAME_KEY = "healthnet-patient-name";
+const WORKSPACE_KEY = "healthnet-device-workspace";
 
 function storedVisitorId() {
   try {
@@ -26,44 +27,6 @@ const starterMessages: Message[] = [
   { role: "assistant", text: "Hi! I’ll help organize your symptoms before your appointment. Start wherever feels natural—what has been bothering you?" },
 ];
 
-function demoMessagesFor(name: string): Message[] {
-  return [
-  { role: "assistant", text: `Hi ${name}. I’ll help organize what’s been happening before your appointment. What has been bothering you?` },
-  { role: "patient", text: "I’ve been getting dizzy spells for about three weeks, mostly when I stand up." },
-  { role: "assistant", text: "Do you remember what was happening around the time the dizziness began?" },
-  { role: "patient", text: "My doctor started lisinopril for high blood pressure a few days before it began." },
-  { role: "assistant", text: "How long do the spells last, and have you ever fainted?" },
-  { role: "patient", text: "Usually 20 to 30 seconds. I haven’t fainted, but I need to hold onto something." },
-  { role: "assistant", text: "Have you had chest pain, weakness on one side, or changes in your vision?" },
-  { role: "patient", text: "No chest pain or weakness. My vision gets a little dim during the spell, then returns to normal." },
-  { role: "assistant", text: "Thanks—that helps clarify the pattern. What would you most like your doctor to help you understand or decide?" },
-  ];
-}
-
-const demoPatientCase: PatientCase = {
-  primaryConcern: "Recurring dizziness when standing, beginning shortly after starting lisinopril.",
-  historyNarrative: "The patient reports brief episodes of dizziness, primarily after standing. Episodes last approximately 20–30 seconds and include temporary dimming of vision. They have not fainted. Symptoms began a few days after starting lisinopril for high blood pressure.",
-  symptomsPresent: ["Dizziness after standing", "Temporary dimming of vision"],
-  symptomsDenied: ["Fainting", "Chest pain", "One-sided weakness"],
-  relevantHistory: ["High blood pressure"],
-  medications: ["Lisinopril 10 mg once daily"],
-  allergies: [],
-  treatmentsTried: ["Holds onto something or sits down during spells"],
-  timeline: [
-    { when: "About 3 weeks ago", normalizedDate: null, title: "Started lisinopril", detail: "10 mg once daily for high blood pressure", confidence: "medium" },
-    { when: "A few days later", normalizedDate: null, title: "Dizziness began", detail: "Brief spells after standing up", confidence: "medium" },
-    { when: "Past 2 weeks", normalizedDate: null, title: "Spells continued", detail: "20–30 seconds with dim vision; no fainting", confidence: "medium" },
-    { when: "Today", normalizedDate: null, title: "Preparing for appointment", detail: "Symptoms remain present", confidence: "high" },
-  ],
-  clinicalConsiderations: [
-    { title: "Postural blood-pressure change", rationale: "The episodes occur after standing and began after a blood-pressure medication change.", uncertainty: "Blood-pressure measurements and clinical evaluation are needed." },
-    { title: "Other causes of dizziness", rationale: "Dizziness can have several medication, hydration, heart-rhythm, inner-ear, or neurological causes.", uncertainty: "The history alone cannot determine the cause." },
-  ],
-  physicianQuestions: ["Could my blood-pressure medication be contributing?", "Should my blood pressure be checked lying down and standing?", "Are any tests or medication changes appropriate?"],
-  missingInformation: ["Hydration and fluid intake", "Home blood-pressure readings", "Goal for the visit"],
-  progress: 78,
-};
-
 function timelineFrom(patientCase: PatientCase): TimelineEvent[] {
   return patientCase.timeline.map((item, index) => ({ ...item, id: `${index}-${item.when}-${item.title}` }));
 }
@@ -74,7 +37,6 @@ export default function Home() {
   const [patientCase, setPatientCase] = useState<PatientCase>(emptyPatientCase);
   const [timeline, setTimeline] = useState<TimelineEvent[]>([]);
   const [input, setInput] = useState("");
-  const [demoLoaded, setDemoLoaded] = useState(false);
   const [intakeComplete, setIntakeComplete] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isSending, setIsSending] = useState(false);
@@ -87,12 +49,35 @@ export default function Home() {
   const [addOpen, setAddOpen] = useState(false);
   const [patientName, setPatientName] = useState("");
   const [nameOpen, setNameOpen] = useState(false);
+  const [workspaceLoaded, setWorkspaceLoaded] = useState(false);
 
   useEffect(() => {
     const savedName = window.localStorage.getItem(PATIENT_NAME_KEY)?.trim() || "";
     setPatientName(savedName);
     if (!savedName) setNameOpen(true);
+    try {
+      const savedWorkspace = window.localStorage.getItem(WORKSPACE_KEY);
+      if (savedWorkspace) {
+        const saved = JSON.parse(savedWorkspace) as { messages?: Message[]; patientCase?: PatientCase; intakeComplete?: boolean; conversationId?: string | null; visitId?: string | null };
+        if (saved.messages?.length) setMessages(saved.messages);
+        if (saved.patientCase) {
+          setPatientCase(saved.patientCase);
+          setTimeline(timelineFrom(saved.patientCase));
+        }
+        setIntakeComplete(Boolean(saved.intakeComplete));
+        setConversationId(saved.conversationId || null);
+        setVisitId(saved.visitId || null);
+      }
+    } catch {
+      window.localStorage.removeItem(WORKSPACE_KEY);
+    }
+    setWorkspaceLoaded(true);
   }, []);
+
+  useEffect(() => {
+    if (!workspaceLoaded) return;
+    window.localStorage.setItem(WORKSPACE_KEY, JSON.stringify({ messages, patientCase, intakeComplete, conversationId, visitId }));
+  }, [workspaceLoaded, messages, patientCase, intakeComplete, conversationId, visitId]);
 
   const patientAnswers = messages.filter((message) => message.role === "patient");
   const progress = intakeComplete ? 100 : patientCase.progress;
@@ -133,7 +118,6 @@ export default function Home() {
       setIntakeComplete(result.intakeComplete);
       setUrgentWarning(result.urgentWarning);
       setConversationId(result.conversationId);
-      setDemoLoaded(false);
     } catch (error) {
       setMessages(previousMessages);
       setInput(answer);
@@ -141,18 +125,6 @@ export default function Home() {
     } finally {
       setIsSending(false);
     }
-  }
-
-  function loadDemo() {
-    setMessages(demoMessagesFor(patientName || "there"));
-    setPatientCase(demoPatientCase);
-    setTimeline(timelineFrom(demoPatientCase));
-    setDemoLoaded(true);
-    setIntakeComplete(false);
-    setErrorMessage("");
-    setUrgentWarning(null);
-    setConversationId(null);
-    setVisitId(null);
   }
 
   function savePatientName(name: string) {
@@ -170,12 +142,12 @@ export default function Home() {
     setMessages(starterMessages);
     setPatientCase(emptyPatientCase);
     setTimeline([]);
-    setDemoLoaded(false);
     setIntakeComplete(false);
     setErrorMessage("");
     setUrgentWarning(null);
     setConversationId(null);
     setVisitId(null);
+    window.localStorage.removeItem(WORKSPACE_KEY);
     setView("intake");
   }
 
@@ -193,6 +165,7 @@ export default function Home() {
     if (progress > 35) return "Building your history";
     return "Getting started";
   }, [intakeComplete, progress]);
+  const hasIntakeData = patientAnswers.length > 0 || Boolean(patientCase.primaryConcern) || timeline.length > 0;
 
   return (
     <main className="app-shell">
@@ -222,9 +195,9 @@ export default function Home() {
           <button className="add-button" onClick={() => setAddOpen(true)}><span>＋</span> Add</button>
         </header>
 
-        {view === "home" && <Dashboard patientName={displayName} hasName={Boolean(patientName)} onEditName={() => setNameOpen(true)} onNavigate={setView} onAdd={() => setAddOpen(true)} onLoadDemo={loadDemo} />}
+        {view === "home" && <Dashboard patientName={displayName} hasName={Boolean(patientName)} patientCase={patientCase} timeline={timeline} intakeComplete={intakeComplete} hasIntakeData={hasIntakeData} onEditName={() => setNameOpen(true)} onNavigate={setView} onAdd={() => setAddOpen(true)} />}
         {view === "intake" && <div className="intake-page">
-          <div className="page-intro no-print"><div><p className="eyebrow">PREPARE FOR YOUR VISIT</p><h1>Tell us what’s been happening</h1><p>Share your story naturally. AI asks focused follow-up questions and organizes the details for you.</p></div><button className="demo-button" onClick={loadDemo}>Load example patient</button></div>
+          <div className="page-intro no-print"><div><p className="eyebrow">PREPARE FOR YOUR VISIT</p><h1>Tell us what’s been happening</h1><p>Share your story naturally. AI asks focused follow-up questions and organizes the details for you.</p></div>{hasIntakeData && <button className="demo-button" onClick={() => { if (window.confirm("Start a new intake and clear the current fictional patient history?")) startOver(); }}>Start new intake</button>}</div>
           <div className="intake-grid">
             <section className="conversation-card">
               <div className="conversation-header no-print"><div className="ai-orb"><span /></div><div><strong>HealthNet care agent</strong><span><i /> {conversationId ? "Visit memory active" : "Ready to organize your history"}</span></div><button aria-label="More options">•••</button></div>
@@ -250,13 +223,13 @@ export default function Home() {
         </div>}
 
         {view === "review" && <ReviewView concern={summaryConcern} timeline={timeline} patientCase={patientCase} onBack={() => setView("intake")} onContinue={() => setView("summary")} />}
-        {view === "summary" && <SummaryView patientName={displayName} concern={summaryConcern} timeline={timeline} patientCase={patientCase} onBack={() => setView("review")} />}
+        {view === "summary" && (hasIntakeData ? <SummaryView patientName={displayName} concern={summaryConcern} timeline={timeline} patientCase={patientCase} onBack={() => setView("review")} /> : <EmptyDestination icon="▧" eyebrow="VISIT SUMMARY" title="No visit summary yet" text="Complete a health intake first. HealthNet will organize only the information you provide into a printable summary." action="Start health intake" onAction={() => setView("intake")} />)}
         {view === "timeline" && <TimelineWorkspace timeline={timeline} editingId={editingId} setEditingId={setEditingId} updateTimeline={updateTimeline} onIntake={() => setView("intake")} />}
         {view === "records" && <ModulePreview kind="records" onAdd={() => setAddOpen(true)} />}
         {view === "labs" && <ModulePreview kind="labs" onAdd={() => setAddOpen(true)} />}
         {view === "medications" && <ModulePreview kind="medications" onAdd={() => setAddOpen(true)} />}
-        {view === "appointments" && <AppointmentsPreview onPrepare={() => setView("intake")} />}
-        {view === "care-plan" && <CarePlanPreview onNavigate={setView} />}
+        {view === "appointments" && <AppointmentsPreview hasIntakeData={hasIntakeData} onPrepare={() => setView("intake")} />}
+        {view === "care-plan" && <CarePlanPreview patientCase={patientCase} hasIntakeData={hasIntakeData} onNavigate={setView} />}
       </section>
       <nav className="mobile-nav no-print" aria-label="Mobile navigation">
         <NavButton icon="⌂" label="Home" target="home" current={view} onSelect={setView} />
@@ -277,9 +250,11 @@ function NavButton({ icon, label, target, current, onSelect }: { icon: string; l
   return <button className={active ? "active" : ""} onClick={() => onSelect(target)}><span className="nav-icon">{icon}</span>{label}</button>;
 }
 
-function Dashboard({ patientName, hasName, onEditName, onNavigate, onAdd, onLoadDemo }: { patientName: string; hasName: boolean; onEditName: () => void; onNavigate: (view: View) => void; onAdd: () => void; onLoadDemo: () => void }) {
+function Dashboard({ patientName, hasName, patientCase, timeline, intakeComplete, hasIntakeData, onEditName, onNavigate, onAdd }: { patientName: string; hasName: boolean; patientCase: PatientCase; timeline: TimelineEvent[]; intakeComplete: boolean; hasIntakeData: boolean; onEditName: () => void; onNavigate: (view: View) => void; onAdd: () => void }) {
+  const attentionItems = patientCase.missingInformation;
+  const questions = patientCase.physicianQuestions;
   return <div className="dashboard-page">
-    <section className="welcome-row"><div><p className="eyebrow">YOUR HEALTHNET HOME</p><h1>{hasName ? `Good morning, ${patientName}` : "Welcome to HealthNet"}</h1><p>What would you like help with today? {!hasName && <button className="inline-name-button" onClick={onEditName}>Add your name</button>}</p></div><div className="care-status"><span>✓</span><div><strong>Your care plan is on track</strong><p>2 things to do this week</p></div></div></section>
+    <section className="welcome-row"><div><p className="eyebrow">YOUR HEALTHNET HOME</p><h1>{hasName ? `Good morning, ${patientName}` : "Welcome to HealthNet"}</h1><p>What would you like help with today? {!hasName && <button className="inline-name-button" onClick={onEditName}>Add your name</button>}</p></div></section>
     <section className="action-grid" aria-label="Quick actions">
       <ActionCard icon="□" tone="blue" title="Prepare for an appointment" text="Organize your concerns and create a one-page visit agenda." action="Start preparing" onClick={() => onNavigate("appointments")} />
       <ActionCard icon="✦" tone="teal" title="Describe a new concern" text="Talk with HealthNet and build a clear symptom history." action="Start health intake" onClick={() => onNavigate("intake")} />
@@ -288,24 +263,29 @@ function Dashboard({ patientName, hasName, onEditName, onNavigate, onAdd, onLoad
     </section>
     <div className="dashboard-columns">
       <div className="dashboard-main">
-        <section className="dashboard-card tasks-card"><div className="card-title"><div><p className="eyebrow">NEXT STEPS</p><h2>What needs your attention</h2></div><span className="count-badge">2 open</span></div>
-          <TaskRow checked={false} title="Prepare questions for primary care visit" meta="Due Aug 8 · From upcoming appointment" tag="Appointment" />
-          <TaskRow checked={false} title="Record blood pressure morning and evening" meta="Due this week · Clinician instruction" tag="Monitoring" />
-          <TaskRow checked title="Pick up lisinopril refill" meta="Completed today · Medication" tag="Done" />
+        <section className="dashboard-card tasks-card"><div className="card-title"><div><p className="eyebrow">NEXT STEPS</p><h2>What needs your attention</h2></div>{attentionItems.length > 0 && <span className="count-badge">{attentionItems.length} to review</span>}</div>
+          {attentionItems.length > 0 ? attentionItems.map((item, index) => <TaskRow key={`${item}-${index}`} checked={false} title={item} meta="Missing information identified during intake" tag="AI-organized" />) : <DashboardEmpty icon="✓" title="No next steps yet" text="After your intake, information that still needs clarification will appear here." action="Start health intake" onAction={() => onNavigate("intake")} />}
         </section>
-        <section className="dashboard-card"><div className="card-title"><div><p className="eyebrow">YOUR HEALTH INFORMATION</p><h2>Recently added</h2></div><button onClick={() => onNavigate("records")}>View all</button></div>
-          <div className="record-row"><span className="record-icon">▤</span><div><strong>Primary care visit notes</strong><p>Clinical note · July 14, 2026 · Bayview Medical</p></div><span className="source-pill record-source">Uploaded record</span><button>›</button></div>
-          <div className="record-row"><span className="record-icon lab">⌁</span><div><strong>Basic metabolic panel</strong><p>Lab result · July 14, 2026 · Bayview Medical</p></div><span className="source-pill record-source">Uploaded record</span><button>›</button></div>
+        <section className="dashboard-card"><div className="card-title"><div><p className="eyebrow">YOUR HEALTH INFORMATION</p><h2>From your intake</h2></div>{hasIntakeData && <button onClick={() => onNavigate("review")}>Review all</button>}</div>
+          {hasIntakeData ? <><button className="health-info-row" onClick={() => onNavigate("review")}><span className="record-icon">✦</span><div><strong>{patientCase.primaryConcern || "Health concern in progress"}</strong><p>{intakeComplete ? "Intake ready for review" : `${patientCase.progress}% of intake organized`}</p></div><span className="source-pill patient-source">Patient-reported</span><b>›</b></button>{timeline.length > 0 && <button className="health-info-row" onClick={() => onNavigate("timeline")}><span className="record-icon lab">↯</span><div><strong>Health timeline</strong><p>{timeline.length} event{timeline.length === 1 ? "" : "s"} organized from the conversation</p></div><span className="source-pill patient-source">Patient-reported</span><b>›</b></button>}</> : <DashboardEmpty icon="✦" title="Nothing added yet" text="Your concern, timeline, and summary will appear here after you begin talking with the care agent." action="Begin conversation" onAction={() => onNavigate("intake")} />}
         </section>
       </div>
       <aside className="dashboard-side">
-        <section className="next-visit-card"><div className="visit-date"><strong>12</strong><span>AUG</span></div><p className="eyebrow">NEXT APPOINTMENT</p><h2>Primary care follow-up</h2><p>Dr. Elena Park · 10:30 AM</p><div className="visit-detail"><span>⌖</span>Bayview Medical Center</div><button onClick={() => onNavigate("appointments")}>Prepare for visit <span>→</span></button></section>
-        <section className="dashboard-card questions-card"><div className="card-title"><div><p className="eyebrow">SAVED QUESTIONS</p><h2>Ask your physician</h2></div><span>3</span></div><p>Could my blood-pressure medication be contributing to the dizziness?</p><p>Should I track readings while sitting and standing?</p><button onClick={() => onNavigate("appointments")}>View all questions</button></section>
-        <section className="workspace-tip"><span>✦</span><div><strong>Explore the connected demo</strong><p>Load a fictional sample history to see how intake information becomes a timeline and visit summary.</p><button onClick={() => { onLoadDemo(); onNavigate("intake"); }}>Load example history</button></div></section>
+        <section className="dashboard-card appointment-empty"><p className="eyebrow">NEXT APPOINTMENT</p><DashboardEmpty icon="□" title="No appointment added" text="Appointment details will appear here only after you add them." action="Open appointments" onAction={() => onNavigate("appointments")} /></section>
+        <section className="dashboard-card questions-card"><div className="card-title"><div><p className="eyebrow">QUESTIONS</p><h2>Ask your physician</h2></div>{questions.length > 0 && <span>{questions.length}</span>}</div>{questions.length > 0 ? <>{questions.slice(0, 3).map((question, index) => <p key={`${question}-${index}`}>{question}</p>)}<button onClick={() => onNavigate("summary")}>View in visit summary</button></> : <DashboardEmpty icon="?" title="No questions yet" text="HealthNet will suggest questions based only on the concern you describe." action="Start health intake" onAction={() => onNavigate("intake")} />}</section>
+        <section className="workspace-tip"><span>✦</span><div><strong>{hasIntakeData ? "Your workspace is updating" : "Start with your own story"}</strong><p>{hasIntakeData ? "HealthNet is using your conversation to organize this workspace. Review every detail before sharing it." : "Describe a fictional health concern and the AI will begin building your personalized workspace."}</p><button onClick={() => onNavigate(hasIntakeData ? "review" : "intake")}>{hasIntakeData ? "Review organized information" : "Begin health intake"}</button></div></section>
       </aside>
     </div>
     <div className="dashboard-disclaimer"><span>ⓘ</span><p><strong>HealthNet helps you organize health information.</strong> It does not diagnose conditions or replace professional medical care.</p><button onClick={onAdd}>＋ Add health information</button></div>
   </div>;
+}
+
+function DashboardEmpty({ icon, title, text, action, onAction }: { icon: string; title: string; text: string; action: string; onAction: () => void }) {
+  return <div className="dashboard-empty"><span>{icon}</span><div><strong>{title}</strong><p>{text}</p><button onClick={onAction}>{action} →</button></div></div>;
+}
+
+function EmptyDestination({ icon, eyebrow, title, text, action, onAction }: { icon: string; eyebrow: string; title: string; text: string; action: string; onAction: () => void }) {
+  return <div className="module-page"><div className="module-heading"><div><p className="eyebrow">{eyebrow}</p><h1>{title}</h1><p>{text}</p></div></div><section className="full-timeline-card"><div className="empty-module"><span>{icon}</span><h2>{title}</h2><p>{text}</p><button onClick={onAction}>{action}</button></div></section></div>;
 }
 
 function ActionCard({ icon, tone, title, text, action, onClick }: { icon: string; tone: string; title: string; text: string; action: string; onClick: () => void }) {
@@ -334,16 +314,17 @@ function ModulePreview({ kind, onAdd }: { kind: keyof typeof moduleContent; onAd
   return <div className="module-page"><div className="module-heading"><div><p className="eyebrow">{content.eyebrow}</p><h1>{content.title}</h1><p>{content.text}</p></div><span className="development-badge">Next feature</span></div><section className="module-preview-card"><div className="module-visual"><span>{content.icon}</span><i /><i /><i /></div><div><span className="coming-chip">Planned for the next build</span><h2>A connected workspace—not another folder</h2><p>Information added here will connect to your timeline, appointment agenda, clinician-ready summary, and care plan.</p><ol>{content.steps.map((step, index) => <li key={step}><span>{index + 1}</span>{step}</li>)}</ol><button onClick={onAdd}>{content.action}</button><small>The interface is ready; processing and permanent storage will be connected in the next phase.</small></div></section></div>;
 }
 
-function AppointmentsPreview({ onPrepare }: { onPrepare: () => void }) {
-  return <div className="module-page"><div className="module-heading"><div><p className="eyebrow">APPOINTMENTS</p><h1>Walk in prepared</h1><p>Bring your goals, recent changes, timeline, and questions together before the visit.</p></div><button className="primary-button" onClick={onPrepare}>Start appointment intake</button></div><div className="appointment-layout"><section className="appointment-hero"><div className="large-date"><strong>12</strong><span>AUG 2026</span></div><div><span className="source-pill clinician-source">Upcoming</span><h2>Primary care follow-up</h2><p>Dr. Elena Park · Bayview Medical Center</p><div className="appointment-facts"><span>10:30 AM</span><span>30 minutes</span><span>In person</span></div></div></section><section className="agenda-card"><p className="eyebrow">VISIT AGENDA</p><h2>3 steps to feel prepared</h2><div><span>1</span><p><strong>Describe your main concern</strong>Complete the guided health intake.</p></div><div><span>2</span><p><strong>Review your health timeline</strong>Correct dates and important changes.</p></div><div><span>3</span><p><strong>Print your visit summary</strong>Bring your history and questions.</p></div><button onClick={onPrepare}>Continue preparation →</button></section></div></div>;
+function AppointmentsPreview({ hasIntakeData, onPrepare }: { hasIntakeData: boolean; onPrepare: () => void }) {
+  return <div className="module-page"><div className="module-heading"><div><p className="eyebrow">APPOINTMENTS</p><h1>Walk in prepared</h1><p>Bring your goals, recent changes, timeline, and questions together before the visit.</p></div></div><section className="full-timeline-card"><div className="empty-module"><span>□</span><h2>No appointment added</h2><p>HealthNet will never invent appointment details. When appointment entry is connected, the date, clinician, location, and visit agenda will appear here.</p><button onClick={onPrepare}>{hasIntakeData ? "Continue health intake" : "Start health intake"}</button></div></section></div>;
 }
 
-function CarePlanPreview({ onNavigate }: { onNavigate: (view: View) => void }) {
-  return <div className="module-page"><div className="module-heading"><div><p className="eyebrow">CARE PLAN</p><h1>Your next steps, together</h1><p>See what needs to happen next and where every instruction came from.</p></div><span className="status-badge">On track</span></div><div className="care-summary-grid"><section><span>2</span><p>Open tasks</p></section><section><span>1</span><p>Upcoming appointment</p></section><section><span>1</span><p>Medication to review</p></section><section><span>3</span><p>Saved questions</p></section></div><section className="dashboard-card care-list"><div className="card-title"><div><p className="eyebrow">THIS WEEK</p><h2>Care plan activity</h2></div></div><TaskRow checked={false} title="Prepare questions for primary care visit" meta="Due Aug 8 · Upcoming appointment" tag="Appointment" /><TaskRow checked={false} title="Record blood pressure morning and evening" meta="Clinician instruction · Added July 14" tag="Monitoring" /><TaskRow checked title="Pick up lisinopril refill" meta="Completed today · Medication" tag="Done" /><div className="care-plan-actions"><button onClick={() => onNavigate("appointments")}>View appointment</button><button onClick={() => onNavigate("medications")}>Review medications</button></div></section></div>;
+function CarePlanPreview({ patientCase, hasIntakeData, onNavigate }: { patientCase: PatientCase; hasIntakeData: boolean; onNavigate: (view: View) => void }) {
+  const items = patientCase.missingInformation;
+  return <div className="module-page"><div className="module-heading"><div><p className="eyebrow">CARE PLAN</p><h1>Your next steps, together</h1><p>See what needs to happen next and where every instruction came from.</p></div></div>{items.length > 0 ? <section className="dashboard-card care-list"><div className="card-title"><div><p className="eyebrow">FROM YOUR INTAKE</p><h2>Information to clarify</h2></div><span className="count-badge">{items.length} items</span></div>{items.map((item, index) => <TaskRow key={`${item}-${index}`} checked={false} title={item} meta="Missing information identified during intake" tag="AI-organized" />)}<div className="care-plan-actions"><button onClick={() => onNavigate("intake")}>Continue intake</button><button onClick={() => onNavigate("summary")}>Review summary</button></div></section> : <section className="full-timeline-card"><div className="empty-module"><span>✓</span><h2>No care-plan items yet</h2><p>{hasIntakeData ? "No unfinished information has been identified from the current intake. Clinician instructions and after-visit tasks will appear only after they are added." : "Begin a health intake first. HealthNet will organize missing information here without inventing clinical instructions or tasks."}</p><button onClick={() => onNavigate("intake")}>{hasIntakeData ? "Return to intake" : "Start health intake"}</button></div></section>}</div>;
 }
 
 function SearchModal({ onClose, onNavigate }: { onClose: () => void; onNavigate: (view: View) => void }) {
-  return <div className="modal-backdrop" onMouseDown={onClose}><section className="search-modal" onMouseDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-label="Search HealthNet"><div className="search-input"><span>⌕</span><input autoFocus placeholder="Search medications, records, appointments…" /><button onClick={onClose}>Esc</button></div><p>QUICK LINKS</p><button onClick={() => onNavigate("timeline")}><span>↯</span><div><strong>Health timeline</strong><small>Symptoms, treatments, and changes</small></div><b>›</b></button><button onClick={() => onNavigate("medications")}><span>⊕</span><div><strong>Medication list</strong><small>Doses, timing, and purposes</small></div><b>›</b></button><button onClick={() => onNavigate("appointments")}><span>□</span><div><strong>Next appointment</strong><small>August 12 with Dr. Elena Park</small></div><b>›</b></button></section></div>;
+  return <div className="modal-backdrop" onMouseDown={onClose}><section className="search-modal" onMouseDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-label="Search HealthNet"><div className="search-input"><span>⌕</span><input autoFocus placeholder="Search your HealthNet workspace…" /><button onClick={onClose}>Esc</button></div><p>QUICK LINKS</p><button onClick={() => onNavigate("intake")}><span>✦</span><div><strong>Health intake</strong><small>Your conversation with the care agent</small></div><b>›</b></button><button onClick={() => onNavigate("timeline")}><span>↯</span><div><strong>Health timeline</strong><small>Events organized from your information</small></div><b>›</b></button><button onClick={() => onNavigate("summary")}><span>▧</span><div><strong>Visit summary</strong><small>Your clinician-ready information</small></div><b>›</b></button></section></div>;
 }
 
 function AddModal({ onClose, onNavigate }: { onClose: () => void; onNavigate: (view: View) => void }) {
