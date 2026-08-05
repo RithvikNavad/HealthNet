@@ -24,6 +24,12 @@
       "database_id": "7741397a-046a-43e1-bc35-71c910bd5b9c"
     }
   ],
+  "r2_buckets": [
+    {
+      "binding": "RECORDS",
+      "bucket_name": "healthnet-rithvik-records"
+    }
+  ],
   "observability": {
     "enabled": true
   }

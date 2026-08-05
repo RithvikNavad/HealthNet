@@ -13,3 +13,19 @@ export const agentRateLimits = sqliteTable(
     index("idx_agent_rate_limits_updated_at").on(table.updatedAt),
   ],
 );
+
+export const medicalRecords = sqliteTable(
+  "medical_records",
+  {
+    id: text("id").primaryKey(),
+    visitorId: text("visitor_id").notNull(),
+    objectKey: text("object_key").notNull().unique(),
+    fileName: text("file_name").notNull(),
+    sizeBytes: integer("size_bytes").notNull(),
+    mimeType: text("mime_type").notNull(),
+    uploadedAt: text("uploaded_at").notNull(),
+  },
+  (table) => [
+    index("idx_medical_records_visitor_uploaded").on(table.visitorId, table.uploadedAt),
+  ],
+);
