@@ -2,6 +2,7 @@
 
 import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { emptyPatientCase, type IntakeApiResult, type PatientCase } from "./intake-types";
+import { listMedicalRecords, removeMedicalRecord, saveMedicalRecord } from "../lib/record-storage";
 
 type View = "home" | "intake" | "timeline" | "records" | "labs" | "medications" | "appointments" | "care-plan" | "review" | "summary";
 type TimelineEvent = PatientCase["timeline"][number] & { id: string };
@@ -324,12 +325,8 @@ function RecordsWorkspace() {
 
   useEffect(() => {
     const visitorId = storedVisitorId();
-    fetch(`/api/records?visitorId=${encodeURIComponent(visitorId)}`)
-      .then(async (response) => {
-        const result = await response.json() as { records?: MedicalRecord[]; error?: string };
-        if (!response.ok) throw new Error(result.error || "Your documents could not be loaded.");
-        setRecords(result.records || []);
-      })
+    listMedicalRecords(visitorId)
+      .then((storedRecords) => setRecords(storedRecords))
       .catch((loadError) => setError(loadError instanceof Error ? loadError.message : "Your documents could not be loaded."))
       .finally(() => setLoading(false));
   }, []);
@@ -340,7 +337,7 @@ function RecordsWorkspace() {
     fileInput.current?.click();
   }
 
-  function uploadFile(event: ChangeEvent<HTMLInputElement>) {
+  async function uploadFile(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file) return;
@@ -357,47 +354,31 @@ function RecordsWorkspace() {
     setSuccess("");
     setUploadingName(file.name);
     setUploadProgress(0);
-    const form = new FormData();
-    form.append("visitorId", storedVisitorId());
-    form.append("file", file);
-    const request = new XMLHttpRequest();
-    request.open("POST", "/api/records");
-    request.upload.onprogress = (progressEvent) => {
-      if (progressEvent.lengthComputable) setUploadProgress(Math.round((progressEvent.loaded / progressEvent.total) * 100));
-    };
-    request.onload = () => {
-      try {
-        const result = JSON.parse(request.responseText) as { record?: MedicalRecord; error?: string };
-        if (request.status < 200 || request.status >= 300 || !result.record) throw new Error(result.error || "The PDF could not be saved.");
-        setRecords((current) => [result.record!, ...current]);
-        setSuccess(`${file.name} was added to your records.`);
-      } catch (uploadError) {
-        setError(uploadError instanceof Error ? uploadError.message : "The PDF could not be saved.");
-      } finally {
-        setUploadingName("");
-        setUploadProgress(0);
-      }
-    };
-    request.onerror = () => {
+    try {
+      setUploadProgress(35);
+      const record = await saveMedicalRecord(storedVisitorId(), file);
+      setUploadProgress(100);
+      setRecords((current) => [record, ...current]);
+      setSuccess(`${file.name} was added to your records on this device.`);
+    } catch (uploadError) {
+      setError(uploadError instanceof Error ? uploadError.message : "The PDF could not be saved in this browser.");
+    } finally {
       setUploadingName("");
       setUploadProgress(0);
-      setError("The PDF could not be saved. Check your connection and try again.");
-    };
-    request.send(form);
+    }
   }
 
   async function removeRecord(record: MedicalRecord) {
     if (!window.confirm(`Remove ${record.fileName} from HealthNet?`)) return;
     setError("");
     setSuccess("");
-    const response = await fetch(`/api/records?id=${encodeURIComponent(record.id)}&visitorId=${encodeURIComponent(storedVisitorId())}`, { method: "DELETE" });
-    if (!response.ok) {
-      const result = await response.json().catch(() => ({})) as { error?: string };
-      setError(result.error || "The PDF could not be removed.");
-      return;
+    try {
+      await removeMedicalRecord(record.id);
+      setRecords((current) => current.filter((item) => item.id !== record.id));
+      setSuccess(`${record.fileName} was removed.`);
+    } catch (removeError) {
+      setError(removeError instanceof Error ? removeError.message : "The PDF could not be removed.");
     }
-    setRecords((current) => current.filter((item) => item.id !== record.id));
-    setSuccess(`${record.fileName} was removed.`);
   }
 
   return <div className="module-page records-page">
@@ -405,11 +386,11 @@ function RecordsWorkspace() {
     <input ref={fileInput} className="visually-hidden" type="file" accept="application/pdf,.pdf" onChange={uploadFile} />
     {error && <div className="records-message error" role="alert">{error}</div>}
     {success && <div className="records-message success" role="status">✓ {success}</div>}
-    {uploadingName && <section className="upload-status" aria-live="polite"><div><span className="record-document-icon">PDF</span><div><strong>Uploading {uploadingName}</strong><p>{uploadProgress ? `${uploadProgress}% uploaded` : "Preparing secure upload…"}</p></div></div><div className="upload-track"><span style={{ width: `${uploadProgress || 7}%` }} /></div></section>}
+    {uploadingName && <section className="upload-status" aria-live="polite"><div><span className="record-document-icon">PDF</span><div><strong>Saving {uploadingName}</strong><p>{uploadProgress ? `${uploadProgress}% saved` : "Preparing local storage…"}</p></div></div><div className="upload-track"><span style={{ width: `${uploadProgress || 7}%` }} /></div></section>}
     <section className="records-card">
       {loading ? <div className="records-empty"><span className="records-loader" /><h2>Loading your documents</h2></div> : records.length === 0 ? <div className="records-empty"><span className="records-empty-icon">▤</span><h2>No medical documents yet</h2><p>Add a PDF report or visit note from your computer. Only files you upload will appear here.</p><button onClick={chooseFile}>Choose a PDF</button><small>PDF only · Maximum file size 10 MB · Fictional information only</small></div> : <div className="records-list"><header><div><h2>Uploaded documents</h2><p>{records.length} PDF{records.length === 1 ? "" : "s"} saved</p></div><button onClick={chooseFile}>＋ Add another PDF</button></header>{records.map((record) => <article className="record-file" key={record.id}><span className="record-document-icon">PDF</span><div><strong>{record.fileName}</strong><p>{formatFileSize(record.sizeBytes)} · Added {new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(new Date(record.uploadedAt))}</p></div><span className="record-saved">Saved</span><button className="record-remove" onClick={() => removeRecord(record)} aria-label={`Remove ${record.fileName}`}>Remove</button></article>)}</div>}
     </section>
-    <p className="records-privacy"><span>ⓘ</span> This public prototype is for fictional patient information only. Your PDFs are separated using this browser’s anonymous visitor ID.</p>
+    <p className="records-privacy"><span>ⓘ</span> This public prototype is for fictional patient information only. PDFs stay in this browser on this device and are removed if its site data is cleared.</p>
   </div>;
 }
 
