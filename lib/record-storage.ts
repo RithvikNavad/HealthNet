@@ -1,12 +1,15 @@
 export type StoredMedicalRecord = {
   id: string;
   visitorId: string;
+  category?: DocumentCategory;
   fileName: string;
   sizeBytes: number;
   mimeType: string;
   uploadedAt: string;
   file: Blob;
 };
+
+export type DocumentCategory = "records" | "labs";
 
 const DATABASE_NAME = "healthnet-records";
 const STORE_NAME = "medical-documents";
@@ -34,7 +37,7 @@ function waitForTransaction(transaction: IDBTransaction) {
   });
 }
 
-export async function listMedicalRecords(visitorId: string) {
+export async function listMedicalRecords(visitorId: string, category: DocumentCategory = "records") {
   const database = await openRecordsDatabase();
   try {
     const transaction = database.transaction(STORE_NAME, "readonly");
@@ -44,16 +47,19 @@ export async function listMedicalRecords(visitorId: string) {
       request.onerror = () => reject(request.error || new Error("Local documents could not be loaded."));
     });
     await waitForTransaction(transaction);
-    return records.sort((left, right) => right.uploadedAt.localeCompare(left.uploadedAt));
+    return records
+      .filter((record) => category === "records" ? !record.category || record.category === "records" : record.category === category)
+      .sort((left, right) => right.uploadedAt.localeCompare(left.uploadedAt));
   } finally {
     database.close();
   }
 }
 
-export async function saveMedicalRecord(visitorId: string, file: File) {
+export async function saveMedicalRecord(visitorId: string, file: File, category: DocumentCategory = "records") {
   const record: StoredMedicalRecord = {
     id: window.crypto.randomUUID(),
     visitorId,
+    category,
     fileName: file.name.slice(0, 180),
     sizeBytes: file.size,
     mimeType: "application/pdf",

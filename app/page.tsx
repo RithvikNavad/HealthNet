@@ -227,8 +227,8 @@ export default function Home() {
         {view === "review" && <ReviewView concern={summaryConcern} timeline={timeline} patientCase={patientCase} onBack={() => setView("intake")} onContinue={() => setView("summary")} />}
         {view === "summary" && (hasIntakeData ? <SummaryView patientName={displayName} concern={summaryConcern} timeline={timeline} patientCase={patientCase} onBack={() => setView("review")} /> : <EmptyDestination icon="▧" eyebrow="VISIT SUMMARY" title="No visit summary yet" text="Complete a health intake first. HealthNet will organize only the information you provide into a printable summary." action="Start health intake" onAction={() => setView("intake")} />)}
         {view === "timeline" && <TimelineWorkspace timeline={timeline} editingId={editingId} setEditingId={setEditingId} updateTimeline={updateTimeline} onIntake={() => setView("intake")} />}
-        {view === "records" && <RecordsWorkspace />}
-        {view === "labs" && <ModulePreview kind="labs" onAdd={() => setAddOpen(true)} />}
+        {view === "records" && <DocumentWorkspace kind="records" />}
+        {view === "labs" && <DocumentWorkspace kind="labs" />}
         {view === "medications" && <ModulePreview kind="medications" onAdd={() => setAddOpen(true)} />}
         {view === "appointments" && <AppointmentsPreview hasIntakeData={hasIntakeData} onPrepare={() => setView("intake")} />}
         {view === "care-plan" && <CarePlanPreview patientCase={patientCase} hasIntakeData={hasIntakeData} onNavigate={setView} />}
@@ -306,15 +306,40 @@ function TimelineWorkspace({ timeline, editingId, setEditingId, updateTimeline, 
 }
 
 const moduleContent = {
-  labs: { eyebrow: "LAB RESULTS", title: "See what changed over time", text: "Organize results, reference ranges, and trends so you can prepare better questions for your care team.", icon: "⌁", action: "Add lab results", steps: ["Add results manually or from a report", "Compare values and reference ranges", "Bring trend questions to your physician"] },
   medications: { eyebrow: "MEDICATIONS", title: "Keep every medication in one place", text: "Create a clear medication list with doses, timing, purpose, prescriber, and changes over time.", icon: "⊕", action: "Add a medication", steps: ["Record prescriptions and supplements", "Track start dates and side effects", "Print an up-to-date medication list"] },
+} as const;
+
+const documentWorkspaceContent = {
+  records: {
+    eyebrow: "MEDICAL RECORDS",
+    title: "Your medical documents",
+    text: "Keep PDF reports and visit notes together so they are ready when you need them.",
+    action: "Add a medical document",
+    emptyTitle: "No medical documents yet",
+    emptyText: "Add a PDF report or visit note from your computer. Only files you upload will appear here.",
+    listTitle: "Uploaded documents",
+    destination: "records",
+    icon: "▤",
+  },
+  labs: {
+    eyebrow: "LAB RESULTS",
+    title: "Your lab result documents",
+    text: "Keep PDF lab reports together so results are easy to find before an appointment.",
+    action: "Add lab results",
+    emptyTitle: "No lab results yet",
+    emptyText: "Add a PDF lab report from your computer. Only files you upload will appear here.",
+    listTitle: "Uploaded lab results",
+    destination: "lab results",
+    icon: "⌁",
+  },
 } as const;
 
 function formatFileSize(bytes: number) {
   return bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function RecordsWorkspace() {
+function DocumentWorkspace({ kind }: { kind: keyof typeof documentWorkspaceContent }) {
+  const content = documentWorkspaceContent[kind];
   const fileInput = useRef<HTMLInputElement>(null);
   const [records, setRecords] = useState<MedicalRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -325,11 +350,11 @@ function RecordsWorkspace() {
 
   useEffect(() => {
     const visitorId = storedVisitorId();
-    listMedicalRecords(visitorId)
+    listMedicalRecords(visitorId, kind)
       .then((storedRecords) => setRecords(storedRecords))
       .catch((loadError) => setError(loadError instanceof Error ? loadError.message : "Your documents could not be loaded."))
       .finally(() => setLoading(false));
-  }, []);
+  }, [kind]);
 
   function chooseFile() {
     setError("");
@@ -356,10 +381,10 @@ function RecordsWorkspace() {
     setUploadProgress(0);
     try {
       setUploadProgress(35);
-      const record = await saveMedicalRecord(storedVisitorId(), file);
+      const record = await saveMedicalRecord(storedVisitorId(), file, kind);
       setUploadProgress(100);
       setRecords((current) => [record, ...current]);
-      setSuccess(`${file.name} was added to your records on this device.`);
+      setSuccess(`${file.name} was added to your ${content.destination} on this device.`);
     } catch (uploadError) {
       setError(uploadError instanceof Error ? uploadError.message : "The PDF could not be saved in this browser.");
     } finally {
@@ -382,13 +407,13 @@ function RecordsWorkspace() {
   }
 
   return <div className="module-page records-page">
-    <div className="module-heading records-heading"><div><p className="eyebrow">MEDICAL RECORDS</p><h1>Your medical documents</h1><p>Keep PDF reports and visit notes together so they are ready when you need them.</p></div><button className="primary-button" onClick={chooseFile}>＋ Add a medical document</button></div>
+    <div className="module-heading records-heading"><div><p className="eyebrow">{content.eyebrow}</p><h1>{content.title}</h1><p>{content.text}</p></div><button className="primary-button" onClick={chooseFile}>＋ {content.action}</button></div>
     <input ref={fileInput} className="visually-hidden" type="file" accept="application/pdf,.pdf" onChange={uploadFile} />
     {error && <div className="records-message error" role="alert">{error}</div>}
     {success && <div className="records-message success" role="status">✓ {success}</div>}
     {uploadingName && <section className="upload-status" aria-live="polite"><div><span className="record-document-icon">PDF</span><div><strong>Saving {uploadingName}</strong><p>{uploadProgress ? `${uploadProgress}% saved` : "Preparing local storage…"}</p></div></div><div className="upload-track"><span style={{ width: `${uploadProgress || 7}%` }} /></div></section>}
     <section className="records-card">
-      {loading ? <div className="records-empty"><span className="records-loader" /><h2>Loading your documents</h2></div> : records.length === 0 ? <div className="records-empty"><span className="records-empty-icon">▤</span><h2>No medical documents yet</h2><p>Add a PDF report or visit note from your computer. Only files you upload will appear here.</p><button onClick={chooseFile}>Choose a PDF</button><small>PDF only · Maximum file size 10 MB</small></div> : <div className="records-list"><header><div><h2>Uploaded documents</h2><p>{records.length} PDF{records.length === 1 ? "" : "s"} saved</p></div><button onClick={chooseFile}>＋ Add another PDF</button></header>{records.map((record) => <article className="record-file" key={record.id}><span className="record-document-icon">PDF</span><div><strong>{record.fileName}</strong><p>{formatFileSize(record.sizeBytes)} · Added {new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(new Date(record.uploadedAt))}</p></div><span className="record-saved">Saved</span><button className="record-remove" onClick={() => removeRecord(record)} aria-label={`Remove ${record.fileName}`}>Remove</button></article>)}</div>}
+      {loading ? <div className="records-empty"><span className="records-loader" /><h2>Loading your documents</h2></div> : records.length === 0 ? <div className="records-empty"><span className="records-empty-icon">{content.icon}</span><h2>{content.emptyTitle}</h2><p>{content.emptyText}</p><button onClick={chooseFile}>Choose a PDF</button><small>PDF only · Maximum file size 10 MB</small></div> : <div className="records-list"><header><div><h2>{content.listTitle}</h2><p>{records.length} PDF{records.length === 1 ? "" : "s"} saved</p></div><button onClick={chooseFile}>＋ Add another PDF</button></header>{records.map((record) => <article className="record-file" key={record.id}><span className="record-document-icon">PDF</span><div><strong>{record.fileName}</strong><p>{formatFileSize(record.sizeBytes)} · Added {new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(new Date(record.uploadedAt))}</p></div><span className="record-saved">Saved</span><button className="record-remove" onClick={() => removeRecord(record)} aria-label={`Remove ${record.fileName}`}>Remove</button></article>)}</div>}
     </section>
     <p className="records-privacy"><span>ⓘ</span> PDFs stay in this browser on this device and are removed if its site data is cleared.</p>
   </div>;
