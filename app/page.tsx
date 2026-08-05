@@ -3,6 +3,7 @@
 import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { emptyPatientCase, type IntakeApiResult, type PatientCase } from "./intake-types";
 import { listMedicalRecords, removeMedicalRecord, saveMedicalRecord } from "../lib/record-storage";
+import MedicationsWorkspace from "./medications-workspace";
 
 type View = "home" | "intake" | "timeline" | "records" | "labs" | "medications" | "appointments" | "care-plan" | "review" | "summary";
 type TimelineEvent = PatientCase["timeline"][number] & { id: string };
@@ -229,7 +230,7 @@ export default function Home() {
         {view === "timeline" && <TimelineWorkspace timeline={timeline} editingId={editingId} setEditingId={setEditingId} updateTimeline={updateTimeline} onIntake={() => setView("intake")} />}
         {view === "records" && <DocumentWorkspace kind="records" />}
         {view === "labs" && <DocumentWorkspace kind="labs" />}
-        {view === "medications" && <ModulePreview kind="medications" onAdd={() => setAddOpen(true)} />}
+        {view === "medications" && <MedicationsWorkspace />}
         {view === "appointments" && <AppointmentsPreview hasIntakeData={hasIntakeData} onPrepare={() => setView("intake")} />}
         {view === "care-plan" && <CarePlanPreview patientCase={patientCase} hasIntakeData={hasIntakeData} onNavigate={setView} />}
       </section>
@@ -304,10 +305,6 @@ function TimelineWorkspace({ timeline, editingId, setEditingId, updateTimeline, 
     <section className="full-timeline-card">{timeline.length === 0 ? <div className="empty-module"><span>↯</span><h2>Your timeline is ready to be built</h2><p>Complete a health intake and HealthNet will organize dates, symptom changes, treatments, and other important events here.</p><button onClick={onIntake}>Start health intake</button></div> : <div className="full-timeline-list">{timeline.map((item, index) => <article key={item.id}><div className="full-date"><strong>{item.when}</strong><span>{item.confidence === "high" ? "Exact" : "Approximate"}</span></div><div className="full-rail"><i />{index < timeline.length - 1 && <b />}</div><div className="full-event">{editingId === item.id ? <><input value={item.when} onChange={(event) => updateTimeline(item.id, "when", event.target.value)} /><input value={item.title} onChange={(event) => updateTimeline(item.id, "title", event.target.value)} /><textarea value={item.detail} onChange={(event) => updateTimeline(item.id, "detail", event.target.value)} /><button className="save-link" onClick={() => setEditingId(null)}>Save changes</button></> : <><div><span className="source-pill patient-source">Patient-reported</span><button onClick={() => setEditingId(item.id)}>Edit</button></div><h2>{item.title}</h2><p>{item.detail}</p></>}</div></article>)}</div>}</section>
   </div>;
 }
-
-const moduleContent = {
-  medications: { eyebrow: "MEDICATIONS", title: "Keep every medication in one place", text: "Create a clear medication list with doses, timing, purpose, prescriber, and changes over time.", icon: "⊕", action: "Add a medication", steps: ["Record prescriptions and supplements", "Track start dates and side effects", "Print an up-to-date medication list"] },
-} as const;
 
 const documentWorkspaceContent = {
   records: {
@@ -417,11 +414,6 @@ function DocumentWorkspace({ kind }: { kind: keyof typeof documentWorkspaceConte
     </section>
     <p className="records-privacy"><span>ⓘ</span> PDFs stay in this browser on this device and are removed if its site data is cleared.</p>
   </div>;
-}
-
-function ModulePreview({ kind, onAdd }: { kind: keyof typeof moduleContent; onAdd: () => void }) {
-  const content = moduleContent[kind];
-  return <div className="module-page"><div className="module-heading"><div><p className="eyebrow">{content.eyebrow}</p><h1>{content.title}</h1><p>{content.text}</p></div><span className="development-badge">Next feature</span></div><section className="module-preview-card"><div className="module-visual"><span>{content.icon}</span><i /><i /><i /></div><div><span className="coming-chip">Planned for the next build</span><h2>A connected workspace—not another folder</h2><p>Information added here will connect to your timeline, appointment agenda, clinician-ready summary, and care plan.</p><ol>{content.steps.map((step, index) => <li key={step}><span>{index + 1}</span>{step}</li>)}</ol><button onClick={onAdd}>{content.action}</button><small>The interface is ready; processing and permanent storage will be connected in the next phase.</small></div></section></div>;
 }
 
 function AppointmentsPreview({ hasIntakeData, onPrepare }: { hasIntakeData: boolean; onPrepare: () => void }) {
