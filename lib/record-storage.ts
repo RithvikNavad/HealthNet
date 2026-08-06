@@ -1,3 +1,5 @@
+import type { DocumentExplanation } from "./document-explanation";
+
 export type StoredMedicalRecord = {
   id: string;
   visitorId: string;
@@ -7,6 +9,9 @@ export type StoredMedicalRecord = {
   mimeType: string;
   uploadedAt: string;
   file: Blob;
+  explanation?: DocumentExplanation;
+  analyzedAt?: string;
+  explanationModel?: string;
 };
 
 export type DocumentCategory = "records" | "labs";
@@ -82,6 +87,44 @@ export async function removeMedicalRecord(id: string) {
   try {
     const transaction = database.transaction(STORE_NAME, "readwrite");
     transaction.objectStore(STORE_NAME).delete(id);
+    await waitForTransaction(transaction);
+  } finally {
+    database.close();
+  }
+}
+
+export async function saveMedicalRecordExplanation(id: string, explanation: DocumentExplanation, analyzedAt: string, explanationModel: string) {
+  const database = await openRecordsDatabase();
+  try {
+    const transaction = database.transaction(STORE_NAME, "readwrite");
+    const store = transaction.objectStore(STORE_NAME);
+    const request = store.get(id);
+    const record = await new Promise<StoredMedicalRecord>((resolve, reject) => {
+      request.onsuccess = () => request.result ? resolve(request.result as StoredMedicalRecord) : reject(new Error("The local PDF could not be found."));
+      request.onerror = () => reject(request.error || new Error("The local PDF could not be loaded."));
+    });
+    store.put({ ...record, explanation, analyzedAt, explanationModel });
+    await waitForTransaction(transaction);
+  } finally {
+    database.close();
+  }
+}
+
+export async function removeMedicalRecordExplanation(id: string) {
+  const database = await openRecordsDatabase();
+  try {
+    const transaction = database.transaction(STORE_NAME, "readwrite");
+    const store = transaction.objectStore(STORE_NAME);
+    const request = store.get(id);
+    const record = await new Promise<StoredMedicalRecord>((resolve, reject) => {
+      request.onsuccess = () => request.result ? resolve(request.result as StoredMedicalRecord) : reject(new Error("The local PDF could not be found."));
+      request.onerror = () => reject(request.error || new Error("The local PDF could not be loaded."));
+    });
+    const withoutExplanation = { ...record };
+    delete withoutExplanation.explanation;
+    delete withoutExplanation.analyzedAt;
+    delete withoutExplanation.explanationModel;
+    store.put(withoutExplanation);
     await waitForTransaction(transaction);
   } finally {
     database.close();

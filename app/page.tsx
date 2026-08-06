@@ -2,13 +2,21 @@
 
 import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { emptyPatientCase, type IntakeApiResult, type PatientCase } from "./intake-types";
-import { listMedicalRecords, removeMedicalRecord, saveMedicalRecord } from "../lib/record-storage";
+import {
+  listMedicalRecords,
+  removeMedicalRecord,
+  removeMedicalRecordExplanation,
+  saveMedicalRecord,
+  saveMedicalRecordExplanation,
+  type StoredMedicalRecord,
+} from "../lib/record-storage";
 import MedicationsWorkspace from "./medications-workspace";
+import DocumentExplanationPanel from "./document-explanation-panel";
 
 type View = "home" | "intake" | "timeline" | "records" | "labs" | "medications" | "appointments" | "care-plan" | "review" | "summary";
 type TimelineEvent = PatientCase["timeline"][number] & { id: string };
 type Message = { role: "assistant" | "patient"; text: string };
-type MedicalRecord = { id: string; fileName: string; sizeBytes: number; mimeType: string; uploadedAt: string };
+type MedicalRecord = StoredMedicalRecord;
 
 const VISITOR_ID_KEY = "healthnet-public-demo-visitor";
 const PATIENT_NAME_KEY = "healthnet-patient-name";
@@ -344,6 +352,9 @@ function DocumentWorkspace({ kind }: { kind: keyof typeof documentWorkspaceConte
   const [uploadProgress, setUploadProgress] = useState(0);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [analyzingId, setAnalyzingId] = useState<string | null>(null);
+  const [analysisStage, setAnalysisStage] = useState("");
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   useEffect(() => {
     const visitorId = storedVisitorId();
@@ -403,6 +414,52 @@ function DocumentWorkspace({ kind }: { kind: keyof typeof documentWorkspaceConte
     }
   }
 
+  async function analyzeRecord(record: MedicalRecord) {
+    setError("");
+    setSuccess("");
+    setAnalyzingId(record.id);
+    setAnalysisStage("Securely sending the PDF to the document agent…");
+    const stageTimer = window.setTimeout(() => setAnalysisStage("Reading the report and organizing its findings…"), 1800);
+    try {
+      const form = new FormData();
+      form.set("visitorId", storedVisitorId());
+      form.set("analysisId", window.crypto.randomUUID());
+      form.set("file", new File([record.file], record.fileName, { type: "application/pdf" }));
+      const response = await fetch("/api/documents/analyze", { method: "POST", body: form });
+      const payload = await response.json().catch(() => null) as null | {
+        error?: string;
+        explanation?: NonNullable<MedicalRecord["explanation"]>;
+        analyzedAt?: string;
+        agent?: { model?: string };
+      };
+      if (!response.ok || !payload?.explanation || !payload.analyzedAt) {
+        throw new Error(payload?.error || "The document could not be explained right now.");
+      }
+      await saveMedicalRecordExplanation(record.id, payload.explanation, payload.analyzedAt, payload.agent?.model || "OpenAI");
+      setRecords((current) => current.map((item) => item.id === record.id ? { ...item, explanation: payload.explanation, analyzedAt: payload.analyzedAt, explanationModel: payload.agent?.model || "OpenAI" } : item));
+      setExpandedId(record.id);
+      setSuccess(`${record.fileName} now has a plain-English explanation saved on this device.`);
+    } catch (analysisError) {
+      setError(analysisError instanceof Error ? analysisError.message : "The document could not be explained right now.");
+    } finally {
+      window.clearTimeout(stageTimer);
+      setAnalyzingId(null);
+      setAnalysisStage("");
+    }
+  }
+
+  async function deleteExplanation(record: MedicalRecord) {
+    if (!window.confirm(`Delete the AI explanation for ${record.fileName}? The PDF will stay saved.`)) return;
+    try {
+      await removeMedicalRecordExplanation(record.id);
+      setRecords((current) => current.map((item) => item.id === record.id ? { ...item, explanation: undefined, analyzedAt: undefined, explanationModel: undefined } : item));
+      setExpandedId(null);
+      setSuccess(`The explanation for ${record.fileName} was deleted. The PDF is still saved.`);
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : "The explanation could not be deleted.");
+    }
+  }
+
   return <div className="module-page records-page">
     <div className="module-heading records-heading"><div><p className="eyebrow">{content.eyebrow}</p><h1>{content.title}</h1><p>{content.text}</p></div><button className="primary-button" onClick={chooseFile}>＋ {content.action}</button></div>
     <input ref={fileInput} className="visually-hidden" type="file" accept="application/pdf,.pdf" onChange={uploadFile} />
@@ -410,9 +467,9 @@ function DocumentWorkspace({ kind }: { kind: keyof typeof documentWorkspaceConte
     {success && <div className="records-message success" role="status">✓ {success}</div>}
     {uploadingName && <section className="upload-status" aria-live="polite"><div><span className="record-document-icon">PDF</span><div><strong>Saving {uploadingName}</strong><p>{uploadProgress ? `${uploadProgress}% saved` : "Preparing local storage…"}</p></div></div><div className="upload-track"><span style={{ width: `${uploadProgress || 7}%` }} /></div></section>}
     <section className="records-card">
-      {loading ? <div className="records-empty"><span className="records-loader" /><h2>Loading your documents</h2></div> : records.length === 0 ? <div className="records-empty"><span className="records-empty-icon">{content.icon}</span><h2>{content.emptyTitle}</h2><p>{content.emptyText}</p><button onClick={chooseFile}>Choose a PDF</button><small>PDF only · Maximum file size 10 MB</small></div> : <div className="records-list"><header><div><h2>{content.listTitle}</h2><p>{records.length} PDF{records.length === 1 ? "" : "s"} saved</p></div><button onClick={chooseFile}>＋ Add another PDF</button></header>{records.map((record) => <article className="record-file" key={record.id}><span className="record-document-icon">PDF</span><div><strong>{record.fileName}</strong><p>{formatFileSize(record.sizeBytes)} · Added {new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(new Date(record.uploadedAt))}</p></div><span className="record-saved">Saved</span><button className="record-remove" onClick={() => removeRecord(record)} aria-label={`Remove ${record.fileName}`}>Remove</button></article>)}</div>}
+      {loading ? <div className="records-empty"><span className="records-loader" /><h2>Loading your documents</h2></div> : records.length === 0 ? <div className="records-empty"><span className="records-empty-icon">{content.icon}</span><h2>{content.emptyTitle}</h2><p>{content.emptyText}</p><button onClick={chooseFile}>Choose a PDF</button><small>PDF only · Maximum file size 10 MB</small></div> : <div className="records-list"><header><div><h2>{content.listTitle}</h2><p>{records.length} PDF{records.length === 1 ? "" : "s"} saved</p></div><button onClick={chooseFile}>＋ Add another PDF</button></header>{records.map((record) => <div className="record-entry" key={record.id}><article className="record-file"><span className="record-document-icon">PDF</span><div><strong>{record.fileName}</strong><p>{formatFileSize(record.sizeBytes)} · Added {new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(new Date(record.uploadedAt))}</p></div>{record.explanation ? <button className="record-explain secondary" onClick={() => setExpandedId(expandedId === record.id ? null : record.id)}>{expandedId === record.id ? "Hide explanation" : "View explanation"}</button> : <button className="record-explain" disabled={analyzingId !== null} onClick={() => analyzeRecord(record)}>✦ Explain with AI</button>}<button className="record-remove" onClick={() => removeRecord(record)} aria-label={`Remove ${record.fileName}`}>Remove</button></article>{analyzingId === record.id && <div className="analysis-status" role="status"><span className="records-loader" /><div><strong>HealthNet is explaining this document</strong><p>{analysisStage}</p><small>Keep this page open. Complex or scanned PDFs may take a little longer.</small></div></div>}{record.explanation && expandedId === record.id && <DocumentExplanationPanel explanation={record.explanation} fileName={record.fileName} analyzedAt={record.analyzedAt} onDelete={() => deleteExplanation(record)} onAnalyzeAgain={() => analyzeRecord(record)} />}</div>)}</div>}
     </section>
-    <p className="records-privacy"><span>ⓘ</span> PDFs stay in this browser on this device and are removed if its site data is cleared.</p>
+    <p className="records-privacy"><span>ⓘ</span> PDFs stay in this browser on this device. A selected PDF is sent to OpenAI only when you click “Explain with AI”; HealthNet does not permanently store it on a server. Local PDFs and explanations are removed if this site’s browser data is cleared.</p>
   </div>;
 }
 
