@@ -23,6 +23,9 @@ const limits = {
   visitor: 20,
   network: 120,
   visit: 15,
+  documentVisitor: 3,
+  documentNetwork: 30,
+  documentAnalysis: 1,
 };
 
 function secondsUntilTomorrow() {
@@ -95,6 +98,33 @@ export async function enforceAgentRateLimit(request: Request, visitorId: string,
       const message = bucket.label === "visit"
         ? "This demo intake has reached its 15-message limit. Start a new fictional intake to continue."
         : "This public demo has reached its AI usage limit for today. Please try again tomorrow.";
+      return { allowed: false, remaining: 0, retryAfterSeconds: secondsUntilTomorrow(), message };
+    }
+  }
+
+  return { allowed: true, remaining, retryAfterSeconds: secondsUntilTomorrow() };
+}
+
+export async function enforceDocumentAnalysisRateLimit(request: Request, visitorId: string, analysisId: string): Promise<LimitResult> {
+  const db = database();
+  if (db) await initialize(db);
+
+  const forwardedFor = request.headers.get("cf-connecting-ip") || request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown-network";
+  const day = new Date().toISOString().slice(0, 10);
+  const buckets = [
+    { value: `document-visitor:${visitorId}`, limit: limits.documentVisitor, label: "visitor" },
+    { value: `document-network:${forwardedFor}`, limit: limits.documentNetwork, label: "network" },
+    { value: `document-analysis:${analysisId}`, limit: limits.documentAnalysis, label: "analysis" },
+  ] as const;
+
+  let remaining = Number.POSITIVE_INFINITY;
+  for (const bucket of buckets) {
+    const count = await increment(db, await hashBucket(bucket.value), day);
+    remaining = Math.min(remaining, Math.max(0, bucket.limit - count));
+    if (count > bucket.limit) {
+      const message = bucket.label === "analysis"
+        ? "That document analysis was already submitted. Please start it again from the document."
+        : "This public demo has reached its document explanation limit for today. Please try again tomorrow.";
       return { allowed: false, remaining: 0, retryAfterSeconds: secondsUntilTomorrow(), message };
     }
   }
