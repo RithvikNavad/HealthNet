@@ -12,8 +12,10 @@ import {
 } from "../lib/record-storage";
 import MedicationsWorkspace from "./medications-workspace";
 import DocumentExplanationPanel from "./document-explanation-panel";
+import AppointmentsWorkspace from "./appointments-workspace";
+import { appointmentTimestamp, loadAppointments, type HealthNetAppointment } from "../lib/appointment-storage";
 
-type View = "home" | "intake" | "timeline" | "records" | "labs" | "medications" | "appointments" | "care-plan" | "review" | "summary";
+type View = "home" | "intake" | "timeline" | "records" | "labs" | "medications" | "appointments" | "review" | "summary";
 type TimelineEvent = PatientCase["timeline"][number] & { id: string };
 type Message = { role: "assistant" | "patient"; text: string };
 type MedicalRecord = StoredMedicalRecord;
@@ -42,6 +44,14 @@ function timelineFrom(patientCase: PatientCase): TimelineEvent[] {
   return patientCase.timeline.map((item, index) => ({ ...item, id: `${index}-${item.when}-${item.title}` }));
 }
 
+function nextScheduledAppointment(appointments: HealthNetAppointment[]) {
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+  return [...appointments]
+    .filter((appointment) => appointment.status === "scheduled" && appointmentTimestamp(appointment) >= now.getTime())
+    .sort((left, right) => appointmentTimestamp(left) - appointmentTimestamp(right))[0] || null;
+}
+
 export default function Home() {
   const [view, setView] = useState<View>("home");
   const [messages, setMessages] = useState<Message[]>(starterMessages);
@@ -61,6 +71,7 @@ export default function Home() {
   const [patientName, setPatientName] = useState("");
   const [nameOpen, setNameOpen] = useState(false);
   const [workspaceLoaded, setWorkspaceLoaded] = useState(false);
+  const [appointments, setAppointments] = useState<HealthNetAppointment[]>([]);
 
   useEffect(() => {
     const savedName = window.localStorage.getItem(PATIENT_NAME_KEY)?.trim() || "";
@@ -82,6 +93,7 @@ export default function Home() {
     } catch {
       window.localStorage.removeItem(WORKSPACE_KEY);
     }
+    setAppointments(loadAppointments());
     setWorkspaceLoaded(true);
   }, []);
 
@@ -191,7 +203,6 @@ export default function Home() {
           <NavButton icon="⌁" label="Lab results" target="labs" current={view} onSelect={setView} />
           <NavButton icon="⊕" label="Medications" target="medications" current={view} onSelect={setView} />
           <NavButton icon="□" label="Appointments" target="appointments" current={view} onSelect={setView} />
-          <NavButton icon="✓" label="Care plan" target="care-plan" current={view} onSelect={setView} />
           <NavButton icon="▧" label="Visit summary" target="summary" current={view} onSelect={setView} />
         </nav>
         <div className="sidebar-links"><button>Privacy</button><button>Settings</button><button>Help</button><button className="emergency-link">Emergency</button></div>
@@ -206,7 +217,7 @@ export default function Home() {
           <button className="add-button" onClick={() => setAddOpen(true)}><span>＋</span> Add</button>
         </header>
 
-        {view === "home" && <Dashboard patientName={displayName} hasName={Boolean(patientName)} patientCase={patientCase} timeline={timeline} intakeComplete={intakeComplete} hasIntakeData={hasIntakeData} onEditName={() => setNameOpen(true)} onNavigate={setView} onAdd={() => setAddOpen(true)} />}
+        {view === "home" && <Dashboard patientName={displayName} hasName={Boolean(patientName)} patientCase={patientCase} timeline={timeline} appointments={appointments} intakeComplete={intakeComplete} hasIntakeData={hasIntakeData} onEditName={() => setNameOpen(true)} onNavigate={setView} onAdd={() => setAddOpen(true)} />}
         {view === "intake" && <div className="intake-page">
           <div className="page-intro no-print"><div><p className="eyebrow">PREPARE FOR YOUR VISIT</p><h1>Tell us what’s been happening</h1><p>Share your story naturally. AI asks focused follow-up questions and organizes the details for you.</p></div>{hasIntakeData && <button className="demo-button" onClick={() => { if (window.confirm("Start a new intake and clear the current patient history?")) startOver(); }}>Start new intake</button>}</div>
           <div className="intake-grid">
@@ -234,19 +245,18 @@ export default function Home() {
         </div>}
 
         {view === "review" && <ReviewView concern={summaryConcern} timeline={timeline} patientCase={patientCase} onBack={() => setView("intake")} onContinue={() => setView("summary")} />}
-        {view === "summary" && (hasIntakeData ? <SummaryView patientName={displayName} concern={summaryConcern} timeline={timeline} patientCase={patientCase} onBack={() => setView("review")} /> : <EmptyDestination icon="▧" eyebrow="VISIT SUMMARY" title="No visit summary yet" text="Complete a health intake first. HealthNet will organize only the information you provide into a printable summary." action="Start health intake" onAction={() => setView("intake")} />)}
-        {view === "timeline" && <TimelineWorkspace timeline={timeline} editingId={editingId} setEditingId={setEditingId} updateTimeline={updateTimeline} onIntake={() => setView("intake")} />}
+        {view === "summary" && (hasIntakeData ? <SummaryView patientName={displayName} concern={summaryConcern} timeline={timeline} patientCase={patientCase} appointment={nextScheduledAppointment(appointments)} onBack={() => setView("review")} /> : <EmptyDestination icon="▧" eyebrow="VISIT SUMMARY" title="No visit summary yet" text="Complete a health intake first. HealthNet will organize only the information you provide into a printable summary." action="Start health intake" onAction={() => setView("intake")} />)}
+        {view === "timeline" && <TimelineWorkspace timeline={timeline} appointments={appointments} editingId={editingId} setEditingId={setEditingId} updateTimeline={updateTimeline} onIntake={() => setView("intake")} />}
         {view === "records" && <DocumentWorkspace kind="records" />}
         {view === "labs" && <DocumentWorkspace kind="labs" />}
         {view === "medications" && <MedicationsWorkspace />}
-        {view === "appointments" && <AppointmentsPreview hasIntakeData={hasIntakeData} onPrepare={() => setView("intake")} />}
-        {view === "care-plan" && <CarePlanPreview patientCase={patientCase} hasIntakeData={hasIntakeData} onNavigate={setView} />}
+        {view === "appointments" && <AppointmentsWorkspace appointments={appointments} patientCase={patientCase} onChange={setAppointments} />}
       </section>
       <nav className="mobile-nav no-print" aria-label="Mobile navigation">
         <NavButton icon="⌂" label="Home" target="home" current={view} onSelect={setView} />
         <NavButton icon="✦" label="Intake" target="intake" current={view} onSelect={setView} />
         <NavButton icon="▤" label="Records" target="records" current={view} onSelect={setView} />
-        <NavButton icon="✓" label="Care plan" target="care-plan" current={view} onSelect={setView} />
+        <NavButton icon="□" label="Appointments" target="appointments" current={view} onSelect={setView} />
         <button onClick={() => setAddOpen(true)}><span>＋</span>More</button>
       </nav>
       {searchOpen && <SearchModal onClose={() => setSearchOpen(false)} onNavigate={(next) => { setView(next); setSearchOpen(false); }} />}
@@ -261,16 +271,17 @@ function NavButton({ icon, label, target, current, onSelect }: { icon: string; l
   return <button className={active ? "active" : ""} onClick={() => onSelect(target)}><span className="nav-icon">{icon}</span>{label}</button>;
 }
 
-function Dashboard({ patientName, hasName, patientCase, timeline, intakeComplete, hasIntakeData, onEditName, onNavigate, onAdd }: { patientName: string; hasName: boolean; patientCase: PatientCase; timeline: TimelineEvent[]; intakeComplete: boolean; hasIntakeData: boolean; onEditName: () => void; onNavigate: (view: View) => void; onAdd: () => void }) {
+function Dashboard({ patientName, hasName, patientCase, timeline, appointments, intakeComplete, hasIntakeData, onEditName, onNavigate, onAdd }: { patientName: string; hasName: boolean; patientCase: PatientCase; timeline: TimelineEvent[]; appointments: HealthNetAppointment[]; intakeComplete: boolean; hasIntakeData: boolean; onEditName: () => void; onNavigate: (view: View) => void; onAdd: () => void }) {
   const attentionItems = patientCase.missingInformation;
   const questions = patientCase.physicianQuestions;
+  const nextAppointment = nextScheduledAppointment(appointments);
   return <div className="dashboard-page">
     <section className="welcome-row"><div><p className="eyebrow">YOUR HEALTHNET HOME</p><h1>{hasName ? `Good morning, ${patientName}` : "Welcome to HealthNet"}</h1><p>What would you like help with today? {!hasName && <button className="inline-name-button" onClick={onEditName}>Add your name</button>}</p></div></section>
     <section className="action-grid" aria-label="Quick actions">
       <ActionCard icon="□" tone="blue" title="Prepare for an appointment" text="Organize your concerns and create a one-page visit agenda." action="Start preparing" onClick={() => onNavigate("appointments")} />
       <ActionCard icon="✦" tone="teal" title="Describe a new concern" text="Talk with HealthNet and build a clear symptom history." action="Start health intake" onClick={() => onNavigate("intake")} />
       <ActionCard icon="▤" tone="violet" title="Understand a medical document" text="Turn a written report into a plain-language explanation." action="Open records" onClick={() => onNavigate("records")} />
-      <ActionCard icon="✓" tone="green" title="Review your care plan" text="See appointments, medications, tests, and next steps together." action="View care plan" onClick={() => onNavigate("care-plan")} />
+      <ActionCard icon="▣" tone="green" title="Schedule an appointment" text="Choose a date and prepare your goals and questions for the visit." action="Open calendar" onClick={() => onNavigate("appointments")} />
     </section>
     <div className="dashboard-columns">
       <div className="dashboard-main">
@@ -282,7 +293,7 @@ function Dashboard({ patientName, hasName, patientCase, timeline, intakeComplete
         </section>
       </div>
       <aside className="dashboard-side">
-        <section className="dashboard-card appointment-empty"><p className="eyebrow">NEXT APPOINTMENT</p><DashboardEmpty icon="□" title="No appointment added" text="Appointment details will appear here only after you add them." action="Open appointments" onAction={() => onNavigate("appointments")} /></section>
+        <section className="dashboard-card appointment-empty"><p className="eyebrow">NEXT APPOINTMENT</p>{nextAppointment ? <button className="dashboard-appointment" onClick={() => onNavigate("appointments")}><span><strong>{Number(nextAppointment.date.slice(-2))}</strong>{new Intl.DateTimeFormat("en-US", { month: "short" }).format(new Date(`${nextAppointment.date}T12:00:00`))}</span><div><strong>{nextAppointment.title}</strong><p>{new Intl.DateTimeFormat("en-US", { weekday: "short", month: "short", day: "numeric" }).format(new Date(`${nextAppointment.date}T12:00:00`))} at {new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit" }).format(new Date(`${nextAppointment.date}T${nextAppointment.time}:00`))}</p>{nextAppointment.goal && <small>{nextAppointment.goal}</small>}</div><b>›</b></button> : <DashboardEmpty icon="□" title="No appointment added" text="Choose a date and prepare what you want to accomplish at your visit." action="Open calendar" onAction={() => onNavigate("appointments")} />}</section>
         <section className="dashboard-card questions-card"><div className="card-title"><div><p className="eyebrow">QUESTIONS</p><h2>Ask your physician</h2></div>{questions.length > 0 && <span>{questions.length}</span>}</div>{questions.length > 0 ? <>{questions.slice(0, 3).map((question, index) => <p key={`${question}-${index}`}>{question}</p>)}<button onClick={() => onNavigate("summary")}>View in visit summary</button></> : <DashboardEmpty icon="?" title="No questions yet" text="HealthNet will suggest questions based only on the concern you describe." action="Start health intake" onAction={() => onNavigate("intake")} />}</section>
         <section className="workspace-tip"><span>✦</span><div><strong>{hasIntakeData ? "Your workspace is updating" : "Start with your own story"}</strong><p>{hasIntakeData ? "HealthNet is using your conversation to organize this workspace. Review every detail before sharing it." : "Describe a health concern and the AI will begin building your personalized workspace."}</p><button onClick={() => onNavigate(hasIntakeData ? "review" : "intake")}>{hasIntakeData ? "Review organized information" : "Begin health intake"}</button></div></section>
       </aside>
@@ -307,9 +318,10 @@ function TaskRow({ checked, title, meta, tag }: { checked: boolean; title: strin
   return <div className={`care-task ${checked ? "complete" : ""}`}><button aria-label={checked ? "Completed" : "Mark complete"}>{checked ? "✓" : ""}</button><div><strong>{title}</strong><p>{meta}</p></div><span>{tag}</span></div>;
 }
 
-function TimelineWorkspace({ timeline, editingId, setEditingId, updateTimeline, onIntake }: { timeline: TimelineEvent[]; editingId: string | null; setEditingId: (id: string | null) => void; updateTimeline: (id: string, field: "when" | "title" | "detail", value: string) => void; onIntake: () => void }) {
+function TimelineWorkspace({ timeline, appointments, editingId, setEditingId, updateTimeline, onIntake }: { timeline: TimelineEvent[]; appointments: HealthNetAppointment[]; editingId: string | null; setEditingId: (id: string | null) => void; updateTimeline: (id: string, field: "when" | "title" | "detail", value: string) => void; onIntake: () => void }) {
   return <div className="module-page timeline-workspace"><div className="module-heading"><div><p className="eyebrow">YOUR HEALTH STORY</p><h1>Health timeline</h1><p>Review symptoms, treatments, medication changes, and appointments in one clear sequence.</p></div><button className="primary-button" onClick={onIntake}>＋ Add through intake</button></div>
     <div className="source-legend"><span><i className="patient-dot" />Patient-reported</span><span><i className="record-dot" />Uploaded record</span><span><i className="clinician-dot" />Clinician instruction</span></div>
+    {appointments.length > 0 && <section className="appointment-timeline-strip"><div><p className="eyebrow">SCHEDULED VISITS</p><h2>Appointments on your timeline</h2></div><div>{[...appointments].sort((left, right) => appointmentTimestamp(left) - appointmentTimestamp(right)).map((appointment) => <article key={appointment.id}><span>{new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(new Date(`${appointment.date}T12:00:00`))}</span><strong>{appointment.title}</strong><p>{appointment.time}{appointment.clinician ? ` · ${appointment.clinician}` : ""}</p><small>{appointment.status === "completed" ? "Completed" : "Scheduled by patient"}</small></article>)}</div></section>}
     <section className="full-timeline-card">{timeline.length === 0 ? <div className="empty-module"><span>↯</span><h2>Your timeline is ready to be built</h2><p>Complete a health intake and HealthNet will organize dates, symptom changes, treatments, and other important events here.</p><button onClick={onIntake}>Start health intake</button></div> : <div className="full-timeline-list">{timeline.map((item, index) => <article key={item.id}><div className="full-date"><strong>{item.when}</strong><span>{item.confidence === "high" ? "Exact" : "Approximate"}</span></div><div className="full-rail"><i />{index < timeline.length - 1 && <b />}</div><div className="full-event">{editingId === item.id ? <><input value={item.when} onChange={(event) => updateTimeline(item.id, "when", event.target.value)} /><input value={item.title} onChange={(event) => updateTimeline(item.id, "title", event.target.value)} /><textarea value={item.detail} onChange={(event) => updateTimeline(item.id, "detail", event.target.value)} /><button className="save-link" onClick={() => setEditingId(null)}>Save changes</button></> : <><div><span className="source-pill patient-source">Patient-reported</span><button onClick={() => setEditingId(item.id)}>Edit</button></div><h2>{item.title}</h2><p>{item.detail}</p></>}</div></article>)}</div>}</section>
   </div>;
 }
@@ -473,15 +485,6 @@ function DocumentWorkspace({ kind }: { kind: keyof typeof documentWorkspaceConte
   </div>;
 }
 
-function AppointmentsPreview({ hasIntakeData, onPrepare }: { hasIntakeData: boolean; onPrepare: () => void }) {
-  return <div className="module-page"><div className="module-heading"><div><p className="eyebrow">APPOINTMENTS</p><h1>Walk in prepared</h1><p>Bring your goals, recent changes, timeline, and questions together before the visit.</p></div></div><section className="full-timeline-card"><div className="empty-module"><span>□</span><h2>No appointment added</h2><p>HealthNet will never invent appointment details. When appointment entry is connected, the date, clinician, location, and visit agenda will appear here.</p><button onClick={onPrepare}>{hasIntakeData ? "Continue health intake" : "Start health intake"}</button></div></section></div>;
-}
-
-function CarePlanPreview({ patientCase, hasIntakeData, onNavigate }: { patientCase: PatientCase; hasIntakeData: boolean; onNavigate: (view: View) => void }) {
-  const items = patientCase.missingInformation;
-  return <div className="module-page"><div className="module-heading"><div><p className="eyebrow">CARE PLAN</p><h1>Your next steps, together</h1><p>See what needs to happen next and where every instruction came from.</p></div></div>{items.length > 0 ? <section className="dashboard-card care-list"><div className="card-title"><div><p className="eyebrow">FROM YOUR INTAKE</p><h2>Information to clarify</h2></div><span className="count-badge">{items.length} items</span></div>{items.map((item, index) => <TaskRow key={`${item}-${index}`} checked={false} title={item} meta="Missing information identified during intake" tag="AI-organized" />)}<div className="care-plan-actions"><button onClick={() => onNavigate("intake")}>Continue intake</button><button onClick={() => onNavigate("summary")}>Review summary</button></div></section> : <section className="full-timeline-card"><div className="empty-module"><span>✓</span><h2>No care-plan items yet</h2><p>{hasIntakeData ? "No unfinished information has been identified from the current intake. Clinician instructions and after-visit tasks will appear only after they are added." : "Begin a health intake first. HealthNet will organize missing information here without inventing clinical instructions or tasks."}</p><button onClick={() => onNavigate("intake")}>{hasIntakeData ? "Return to intake" : "Start health intake"}</button></div></section>}</div>;
-}
-
 function SearchModal({ onClose, onNavigate }: { onClose: () => void; onNavigate: (view: View) => void }) {
   return <div className="modal-backdrop" onMouseDown={onClose}><section className="search-modal" onMouseDown={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-label="Search HealthNet"><div className="search-input"><span>⌕</span><input autoFocus placeholder="Search your HealthNet workspace…" /><button onClick={onClose}>Esc</button></div><p>QUICK LINKS</p><button onClick={() => onNavigate("intake")}><span>✦</span><div><strong>Health intake</strong><small>Your conversation with the care agent</small></div><b>›</b></button><button onClick={() => onNavigate("timeline")}><span>↯</span><div><strong>Health timeline</strong><small>Events organized from your information</small></div><b>›</b></button><button onClick={() => onNavigate("summary")}><span>▧</span><div><strong>Visit summary</strong><small>Your clinician-ready information</small></div><b>›</b></button></section></div>;
 }
@@ -513,23 +516,25 @@ function ReviewView({ concern, timeline, patientCase, onBack, onContinue }: { co
   </div>;
 }
 
-function SummaryView({ patientName, concern, timeline, patientCase, onBack }: { patientName: string; concern: string; timeline: TimelineEvent[]; patientCase: PatientCase; onBack: () => void }) {
+function SummaryView({ patientName, concern, timeline, patientCase, appointment, onBack }: { patientName: string; concern: string; timeline: TimelineEvent[]; patientCase: PatientCase; appointment: HealthNetAppointment | null; onBack: () => void }) {
   const prepared = new Intl.DateTimeFormat("en-US", { month: "long", day: "numeric", year: "numeric" }).format(new Date());
+  const appointmentQuestions = appointment?.questions.split("\n").map((item) => item.trim()).filter(Boolean) || [];
   return <div className="summary-page">
     <div className="summary-toolbar no-print"><div><p className="eyebrow">VISIT SUMMARY</p><h1>Ready for your appointment</h1><p>Print this summary or save it as a PDF to share with your physician.</p></div><div><button className="secondary-button" onClick={onBack}>Edit information</button><button className="primary-button" onClick={() => window.print()}>Print summary</button></div></div>
     <article className="clinical-summary">
       <header className="document-header"><div><span className="document-logo">H</span><div><strong>HealthNet</strong><p>Pre-Visit Patient Summary</p></div></div><div className="document-meta"><span>Prepared</span><strong>{prepared}</strong></div></header>
-      <div className="patient-strip"><div><span>PATIENT</span><strong>{patientName}</strong></div><div><span>VISIT TYPE</span><strong>Primary care</strong></div><div><span>INFORMATION SOURCE</span><strong>Patient-reported</strong></div></div>
+      <div className="patient-strip"><div><span>PATIENT</span><strong>{patientName}</strong></div><div><span>VISIT TYPE</span><strong>{appointment?.visitType || "Primary care"}</strong></div><div><span>INFORMATION SOURCE</span><strong>Patient-reported</strong></div></div>
       <section className="document-section priority"><p className="section-kicker">PRIMARY CONCERN</p><h2>{concern}</h2></section>
       <div className="document-columns"><div>
         <section className="document-section"><p className="section-kicker">HISTORY OF PRESENT ILLNESS</p><p>{patientCase.historyNarrative || "History has not been fully collected yet."}</p></section>
+        {appointment && <section className="document-section visit-agenda-summary"><p className="section-kicker">APPOINTMENT & VISIT GOAL</p><p><strong>{appointment.title}</strong> — {new Intl.DateTimeFormat("en-US", { month: "long", day: "numeric", year: "numeric" }).format(new Date(`${appointment.date}T12:00:00`))} at {new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit" }).format(new Date(`${appointment.date}T${appointment.time}:00`))}</p>{appointment.goal && <p><strong>Goal:</strong> {appointment.goal}</p>}{appointment.reason && <p><strong>Reason:</strong> {appointment.reason}</p>}{appointment.concerns && <p><strong>Concerns to address:</strong> {appointment.concerns}</p>}</section>}
         <section className="document-section"><p className="section-kicker">SYMPTOM TIMELINE</p><div className="document-timeline">{timeline.length ? timeline.map((item) => <div key={item.id}><span>{item.when}</span><p><strong>{item.title}</strong> — {item.detail}</p></div>) : <p>No timeline events collected.</p>}</div></section>
         <section className="document-section"><p className="section-kicker">RELEVANT HISTORY</p><div className="fact-grid"><Fact label="Known history" values={patientCase.relevantHistory} /><Fact label="Medications" values={patientCase.medications} /><Fact label="Reported allergies" values={patientCase.allergies} /><Fact label="Treatments attempted" values={patientCase.treatmentsTried} /></div></section>
       </div><aside>
         <SummaryList className="positives" title="KEY FINDINGS" values={patientCase.symptomsPresent} empty="No key findings collected" />
         <SummaryList className="negatives" title="IMPORTANT NEGATIVES" values={patientCase.symptomsDenied} empty="None explicitly reported" />
         <section className="document-section considerations"><p className="section-kicker">POSSIBLE CONSIDERATIONS</p>{patientCase.clinicalConsiderations.length ? patientCase.clinicalConsiderations.map((item, index) => <div key={index}><strong>{item.title}</strong><p>{item.rationale} {item.uncertainty}</p></div>) : <p>Not enough information collected to suggest discussion points.</p>}</section>
-        <section className="document-section questions"><p className="section-kicker">QUESTIONS FOR THE PHYSICIAN</p>{patientCase.physicianQuestions.length ? <ol>{patientCase.physicianQuestions.map((item, index) => <li key={index}>{item}</li>)}</ol> : <p>Complete more of the intake to create questions.</p>}</section>
+        <section className="document-section questions"><p className="section-kicker">QUESTIONS FOR THE PHYSICIAN</p>{patientCase.physicianQuestions.length || appointmentQuestions.length ? <ol>{[...patientCase.physicianQuestions, ...appointmentQuestions].filter((item, index, values) => values.indexOf(item) === index).map((item, index) => <li key={index}>{item}</li>)}</ol> : <p>Complete more of the intake or add questions to your appointment agenda.</p>}</section>
       </aside></div>
       <footer className="document-footer"><strong>Patient review recommended</strong><p>AI-organized from patient-reported information. This document does not provide a diagnosis or replace clinical evaluation.</p><span>1 / 1</span></footer>
     </article>
