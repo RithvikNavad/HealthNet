@@ -7,6 +7,9 @@ import {
 } from "../../../../lib/healthnet-document-agent";
 import { HEALTHNET_AGENT_MODEL } from "../../../../lib/healthnet-agent";
 
+export const runtime = "nodejs";
+export const maxDuration = 60;
+
 const MAX_PDF_BYTES = 10 * 1024 * 1024;
 const FieldsSchema = z.object({
   visitorId: z.string().uuid(),

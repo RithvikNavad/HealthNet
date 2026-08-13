@@ -1,5 +1,3 @@
-import { env } from "cloudflare:workers";
-
 type LimitResult = {
   allowed: boolean;
   remaining: number;
@@ -7,14 +5,15 @@ type LimitResult = {
   message?: string;
 };
 
-type D1Like = {
-  prepare(query: string): {
-    bind(...values: unknown[]): {
-      first<T>(): Promise<T | null>;
-      run(): Promise<unknown>;
-    };
-    run(): Promise<unknown>;
-  };
+type LimitBucket = {
+  value: string;
+  limit: number;
+  label: string;
+};
+
+type RedisCommandResult = {
+  result?: number | string | null;
+  error?: string;
 };
 
 const memoryBuckets = new Map<string, number>();
@@ -40,94 +39,95 @@ async function hashBucket(value: string) {
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-function database(): D1Like | null {
-  try {
-    return (env.DB as D1Like | undefined) || null;
-  } catch {
-    return null;
-  }
+function redisConfiguration() {
+  const url = process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL;
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN;
+  return url && token ? { url: url.replace(/\/$/, ""), token } : null;
 }
 
-async function initialize(db: D1Like) {
-  await db.prepare(`CREATE TABLE IF NOT EXISTS agent_rate_limits (
-    bucket_hash TEXT NOT NULL,
-    window_start TEXT NOT NULL,
-    request_count INTEGER NOT NULL DEFAULT 0,
-    updated_at TEXT NOT NULL,
-    PRIMARY KEY (bucket_hash, window_start)
-  )`).run();
-  await db.prepare("CREATE INDEX IF NOT EXISTS idx_agent_rate_limits_updated_at ON agent_rate_limits(updated_at)").run();
-}
+async function incrementRedis(bucketHash: string, windowStart: string) {
+  const redis = redisConfiguration();
+  if (!redis) {
+    if (process.env.VERCEL || process.env.NODE_ENV === "production") {
+      throw new Error("The production rate-limit store is not configured.");
+    }
 
-async function increment(db: D1Like | null, bucketHash: string, windowStart: string) {
-  if (!db) {
     const key = `${bucketHash}:${windowStart}`;
     const count = (memoryBuckets.get(key) || 0) + 1;
     memoryBuckets.set(key, count);
     return count;
   }
 
-  const row = await db.prepare(`INSERT INTO agent_rate_limits (bucket_hash, window_start, request_count, updated_at)
-    VALUES (?, ?, 1, ?)
-    ON CONFLICT(bucket_hash, window_start) DO UPDATE SET
-      request_count = request_count + 1,
-      updated_at = excluded.updated_at
-    RETURNING request_count`)
-    .bind(bucketHash, windowStart, new Date().toISOString())
-    .first<{ request_count: number }>();
-  return row?.request_count || 1;
+  const key = `healthnet:rate-limit:${windowStart}:${bucketHash}`;
+  const response = await fetch(`${redis.url}/pipeline`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${redis.token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify([
+      ["INCR", key],
+      ["EXPIRE", key, secondsUntilTomorrow() + 60, "NX"],
+    ]),
+    cache: "no-store",
+  });
+
+  const results = await response.json().catch(() => null) as RedisCommandResult[] | null;
+  const first = results?.[0];
+  if (!response.ok || !first || first.error) {
+    throw new Error("The rate-limit store request failed.");
+  }
+
+  const count = Number(first.result);
+  if (!Number.isFinite(count)) throw new Error("The rate-limit store returned an invalid count.");
+  return count;
+}
+
+function networkIdentifier(request: Request) {
+  return request.headers.get("x-vercel-forwarded-for")?.split(",")[0]?.trim()
+    || request.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
+    || request.headers.get("x-real-ip")
+    || "unknown-network";
+}
+
+async function enforceBuckets(buckets: LimitBucket[], messageFor: (label: string) => string): Promise<LimitResult> {
+  const day = new Date().toISOString().slice(0, 10);
+  let remaining = Number.POSITIVE_INFINITY;
+
+  for (const bucket of buckets) {
+    const count = await incrementRedis(await hashBucket(bucket.value), day);
+    remaining = Math.min(remaining, Math.max(0, bucket.limit - count));
+    if (count > bucket.limit) {
+      return {
+        allowed: false,
+        remaining: 0,
+        retryAfterSeconds: secondsUntilTomorrow(),
+        message: messageFor(bucket.label),
+      };
+    }
+  }
+
+  return { allowed: true, remaining, retryAfterSeconds: secondsUntilTomorrow() };
 }
 
 export async function enforceAgentRateLimit(request: Request, visitorId: string, visitId: string): Promise<LimitResult> {
-  const db = database();
-  if (db) await initialize(db);
-
-  const forwardedFor = request.headers.get("cf-connecting-ip") || request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown-network";
-  const day = new Date().toISOString().slice(0, 10);
-  const buckets = [
+  const network = networkIdentifier(request);
+  return enforceBuckets([
     { value: `visitor:${visitorId}`, limit: limits.visitor, label: "visitor" },
-    { value: `network:${forwardedFor}`, limit: limits.network, label: "network" },
+    { value: `network:${network}`, limit: limits.network, label: "network" },
     { value: `visit:${visitId}`, limit: limits.visit, label: "visit" },
-  ] as const;
-
-  let remaining = Number.POSITIVE_INFINITY;
-  for (const bucket of buckets) {
-    const count = await increment(db, await hashBucket(bucket.value), day);
-    remaining = Math.min(remaining, Math.max(0, bucket.limit - count));
-    if (count > bucket.limit) {
-      const message = bucket.label === "visit"
-        ? "This demo intake has reached its 15-message limit. Start a new fictional intake to continue."
-        : "This public demo has reached its AI usage limit for today. Please try again tomorrow.";
-      return { allowed: false, remaining: 0, retryAfterSeconds: secondsUntilTomorrow(), message };
-    }
-  }
-
-  return { allowed: true, remaining, retryAfterSeconds: secondsUntilTomorrow() };
+  ], (label) => label === "visit"
+    ? "This demo intake has reached its 15-message limit. Start a new fictional intake to continue."
+    : "This public demo has reached its AI usage limit for today. Please try again tomorrow.");
 }
 
 export async function enforceDocumentAnalysisRateLimit(request: Request, visitorId: string, analysisId: string): Promise<LimitResult> {
-  const db = database();
-  if (db) await initialize(db);
-
-  const forwardedFor = request.headers.get("cf-connecting-ip") || request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown-network";
-  const day = new Date().toISOString().slice(0, 10);
-  const buckets = [
+  const network = networkIdentifier(request);
+  return enforceBuckets([
     { value: `document-visitor:${visitorId}`, limit: limits.documentVisitor, label: "visitor" },
-    { value: `document-network:${forwardedFor}`, limit: limits.documentNetwork, label: "network" },
+    { value: `document-network:${network}`, limit: limits.documentNetwork, label: "network" },
     { value: `document-analysis:${analysisId}`, limit: limits.documentAnalysis, label: "analysis" },
-  ] as const;
-
-  let remaining = Number.POSITIVE_INFINITY;
-  for (const bucket of buckets) {
-    const count = await increment(db, await hashBucket(bucket.value), day);
-    remaining = Math.min(remaining, Math.max(0, bucket.limit - count));
-    if (count > bucket.limit) {
-      const message = bucket.label === "analysis"
-        ? "That document analysis was already submitted. Please start it again from the document."
-        : "This public demo has reached its document explanation limit for today. Please try again tomorrow.";
-      return { allowed: false, remaining: 0, retryAfterSeconds: secondsUntilTomorrow(), message };
-    }
-  }
-
-  return { allowed: true, remaining, retryAfterSeconds: secondsUntilTomorrow() };
+  ], (label) => label === "analysis"
+    ? "That document analysis was already submitted. Please start it again from the document."
+    : "This public demo has reached its document explanation limit for today. Please try again tomorrow.");
 }

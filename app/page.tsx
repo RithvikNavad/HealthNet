@@ -177,7 +177,16 @@ export default function Home() {
   function updateTimeline(id: string, field: "when" | "title" | "detail", value: string) {
     setTimeline((current) => {
       const updated = current.map((item) => item.id === id ? { ...item, [field]: value } : item);
-      setPatientCase((currentCase) => ({ ...currentCase, timeline: updated.map(({ id: _id, ...item }) => item) }));
+      setPatientCase((currentCase) => ({
+        ...currentCase,
+        timeline: updated.map(({ when, normalizedDate, title, detail, confidence }) => ({
+          when,
+          normalizedDate,
+          title,
+          detail,
+          confidence,
+        })),
+      }));
       return updated;
     });
   }

@@ -3,10 +3,10 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 test("medical records and lab results use direct, validated PDF uploads with device-local storage", async () => {
-  const [page, storage, hosting] = await Promise.all([
+  const [page, storage, vercelConfig] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../lib/record-storage.ts", import.meta.url), "utf8"),
-    readFile(new URL("../.openai/hosting.json", import.meta.url), "utf8"),
+    readFile(new URL("../vercel.json", import.meta.url), "utf8"),
   ]);
 
   assert.match(page, /type="file" accept="application\/pdf,\.pdf"/);
@@ -22,5 +22,7 @@ test("medical records and lab results use direct, validated PDF uploads with dev
   assert.match(storage, /record\.category === category/);
   assert.match(storage, /transaction\(STORE_NAME, "readwrite"\)/);
   assert.match(storage, /objectStore\(STORE_NAME\)\.delete/);
-  assert.equal(JSON.parse(hosting).r2, null);
+  const deployment = JSON.parse(vercelConfig);
+  assert.equal(deployment.framework, "nextjs");
+  assert.equal("outputDirectory" in deployment, false);
 });

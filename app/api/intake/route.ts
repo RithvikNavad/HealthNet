@@ -12,6 +12,9 @@ import {
 } from "../../../lib/healthnet-agent";
 import { enforceAgentRateLimit } from "../../../lib/agent-rate-limit";
 
+export const runtime = "nodejs";
+export const maxDuration = 60;
+
 const agentRunner = new Runner({
   workflowName: "HealthNet fictional patient intake",
   traceIncludeSensitiveData: false,
